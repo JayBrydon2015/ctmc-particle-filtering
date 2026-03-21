@@ -7,14 +7,9 @@
 ## Imports ##
 
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from math import comb
-from scipy.special import gammaln
 from scipy.linalg import expm # For computing the matrix exp: e^A
 
 # Particles package
-import particles
 from particles import augmented_state_space_models as augssm
 from particles import distributions as dists
 
