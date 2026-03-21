@@ -1,5 +1,5 @@
 """
-CTMC SSMs as Python objects (classes).
+Modules for CTMC particle filtering.
 
 """
 

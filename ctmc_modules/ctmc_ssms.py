@@ -2,7 +2,7 @@
 
 # -*- coding: utf-8 -*-
 
-""" PF for inferring rates of CTMC """
+""" CTMC SSMs as Python objects (classes). """
 
 ## Imports ##
 
@@ -157,54 +157,8 @@ class CTMC_prop(CTMC):
     """
     
     def proposal0(self, data):
-        return self.PX0()
-    
-    def compute_transition_count(self, datap, data):
-        return np.bincount(self.n * datap.reshape(-1) + data.reshape(-1),
-                minlength=self.n * self.n).reshape(self.n, self.n)
-    
-    def compute_numerator_or_denominator(self, mu, n, a, b, m):
-        return ((-1) ** m * comb(a, m) *
-                (1 / self.delta_t + self.delta_t * (b + m)) **
-                (-mu / self.delta_t - n))
-    
-    def get_nth_moment(self, mu, n, a, b):
-        numerator_result = sum(
-            self.compute_numerator_or_denominator(mu, n, a, b, m)
-            for m in range(a+1)
-        )
-        denominator_result = sum(
-            self.compute_numerator_or_denominator(mu, 0, a, b, m)
-            for m in range(a+1)
-        )
-        R = np.exp( gammaln(n + mu / self.delta_t) - gammaln(mu / self.delta_t) )
-        result = R * numerator_result / denominator_result
-        # print(f"a: {a}")
-        # print(f"b: {b}")
-        # print(f"numerator: {numerator_result}")
-        # print(f"denominator: {denominator_result}")
-        # print(f"result: {result}")
-        return result
+        raise NotImplementedError()
     
     def proposal(self, t, xp, data):
-        lams_means = np.mean(xp, axis=0)
-        trans_count_mat = self.compute_transition_count(data[t-1], data[t])
-        lams_dists = []
-        for idx, mu in enumerate(lams_means):
-            p, q = lams_idx_to_gen_pos(idx, self.n)
-            # Compute a & b
-            a = trans_count_mat[p, q]
-            b = trans_count_mat[p, p]
-            # Compute first and second moments
-            # print(f"idx: {idx}")
-            # print(f"mu: {mu}")
-            if np.isnan(mu):
-                print(xp[:, idx])
-                raise ValueError("mu is np.nan!")
-            first_mom  = self.get_nth_moment(mu, 1, a, b)
-            second_mom = self.get_nth_moment(mu, 2, a, b)
-            var = second_mom - first_mom ** 2
-            alpha, beta = get_gamma_params_from_mean_var(first_mom, var)
-            lams_dists.append(dists.Gamma(alpha, beta))
-        return dists.IndepProd(*lams_dists)
+        raise NotImplementedError()
 
