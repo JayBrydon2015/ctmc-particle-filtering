@@ -16,13 +16,6 @@ from particles import distributions as dists
 
 ## Functions ##
 
-def sigmoid(x, a, b, m, k):
-    """ Result = a when t = 0. """
-    result = a + (b-a) / (1 + np.exp(-k*(x-m)))
-    result -= a + (b-a) / (1 + np.exp(k * m))
-    result += a
-    return result
-
 def get_gamma_params_from_mean_var(mean, var):
     """ Compute the Gamma distribution parameters, alpha
         and beta, from the mean and variance.
