@@ -69,7 +69,7 @@ def compute_transition_prob_matrix(lams, n, delta_t):
 ## CTMC SSM Classes ##
 
 
-class CTMC(augssm.AugmentedStateSpaceModel):
+class CTMC_old(augssm.AugmentedStateSpaceModel):
     """ CTMC Augmented SSM
 
         ----- Parameters -----
@@ -83,8 +83,10 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         - y defined as in type 4
         - SSM starts with the RWs spread across the states as evenly as
           possible.
-        - y: ndarray of shape (n*J, )
+        - y: ndarray of shape (J, )
         - lams: ndarray of shape (n*(n-1), )
+        
+        BUGGED, don't use this.
     """
 
     def PX0(self):
@@ -117,7 +119,6 @@ class CTMC(augssm.AugmentedStateSpaceModel):
     
     def get_cat_dist(self, P_mat, y_i):
         return dists.Categorical(P_mat[np.arange(P_mat.shape[0]), y_i])
-        # return dists.Categorical(P_mat[:, y_i])
 
     def PY(self, t, xp, x, datap=None):
         ## y ##
@@ -136,6 +137,90 @@ class CTMC(augssm.AugmentedStateSpaceModel):
             y_dists = [self.get_cat_dist(P_mat, datap[:, i])
                                 for i in range(datap.shape[1])]
             return dists.IndepProd(*y_dists)
+
+
+class CTMC(augssm.AugmentedStateSpaceModel):
+    """ CTMC Augmented SSM
+
+        ----- Parameters -----
+        n: number of states
+        J: number of random walkers
+        delta_t: real time between observations
+        C: to scale the transition variance by
+        a0: Gamma dist alpha parameters for PX0 in (n, n) ndarray
+        b0: Gamma dist beta parameters for PX0 in (n, n) ndarray
+        y_init: initial configuration of RWs (set to None or don't pass 
+                into initialisation if using the default)
+
+        ----- Notes -----
+        - Track lams_list rather than generator A
+        - y defined as in type 4
+        - SSM starts with the RWs spread across the states as evenly as
+          possible by default (y_init == None)
+        - y (data[k]): ndarray of shape (1, J), by convention
+        - lams: ndarray of shape (n*(n-1), )
+        - y_init: ndarray of shape (J, )
+    """
+    
+    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None):
+        self.n = n
+        self.J = J
+        self.delta_t = delta_t
+        self.C = C
+        self.a0 = a0
+        self.b0 = b0
+        if y_init is None:
+            self.y_init = np.sort(np.array([i % self.n
+                                            for i in range(self.J)]))
+        else:
+            self.y_init = y_init
+
+    def PX0(self):
+        if len(self.a0.shape) > 1: # Currently a (n, n) ndarray
+            self.a0 = gen_to_lams(self.a0)
+            self.b0 = gen_to_lams(self.b0)
+        lams_dists = [dists.Gamma(a, b) for a, b in zip(self.a0, self.b0)]
+        return dists.IndepProd(*lams_dists)
+    
+    def PX(self, t, xp):
+        ## Option 1: Var = lambda * DELTA_T * C ##
+        
+        alpha = xp / self.delta_t
+        beta_i = np.repeat(1/self.delta_t, alpha.shape[0])
+        alpha  /= self.C
+        beta_i /= self.C
+        lams_dists = [dists.Gamma(alpha[:, l], beta_i)
+                      for l in range(alpha.shape[1])]
+        
+        ## Option 2: Var = DELTA_T * C ##
+        
+        # alpha = xp["lams"] ** 2 / self.delta_t
+        # beta = xp["lams"] / self.delta_t
+        # alpha /= self.C
+        # beta  /= self.C
+        # lams_dists = [dists.Gamma(alpha[:,l], beta[:, l])
+        #               for l in range(alpha.shape[1])]
+        
+        return dists.IndepProd(*lams_dists)
+    
+    def get_cat_dist(self, P_mat, y_i):
+        return dists.Categorical(P_mat[:, y_i])
+
+    def PY(self, t, xp, x, datap=None):
+        ## y ##
+        
+        if datap is None: # t == 0
+            datap = self.y_init
+        else: # t >= 1, datap == data[t-1]
+            # By convention, datap is originally of shape (1, J)
+            # Reshape it to (J, )
+            datap = datap.reshape(-1)
+        
+        P_mat = np.stack([compute_transition_prob_matrix(cur_lams, self.n,
+                                                         self.delta_t)
+                          for cur_lams in x], axis=0)
+        y_dists = [self.get_cat_dist(P_mat, y_i) for y_i in datap]
+        return dists.IndepProd(*y_dists)
 
 
 class CTMC_prop(CTMC):

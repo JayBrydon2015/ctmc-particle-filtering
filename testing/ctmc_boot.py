@@ -31,7 +31,7 @@ from particles import augmented_state_space_models as augssm
 from particles.collectors import Moments
 
 from rates_simulation.true_rates_simulation_funtions import (
-    simulate_sigmoid_growth, simulate_constant_rates    
+    simulate_sigmoid_growth, simulate_constant_rates, simulate_data
 )
 
 # %%
@@ -59,17 +59,21 @@ time_points = delta_t * k_series # [t_0, t_1, ..., t_K]
 a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
 
 ## For a Bootstrap PF ##
-ctmc_ssm = CTMC(a0=a0, b0=b0, n=n, J=J, C=C, delta_t=delta_t)
+ctmc_ssm = CTMC(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0)
+
+## Get y_init from ctmc_ssm object ##
+y_init = ctmc_ssm.y_init
 
 # %%
 
 ## Sigmoid growth of true rates ##
 
 max_growth = np.array([2, 1]) # Must be same shape as mu0
-sigmoid_growth_param = 14 # Tune this to achieve desired shape of sigmoid growth
-true_states, data = simulate_sigmoid_growth(mu0, max_growth, n, J, K, delta_t,
-                                            sigmoid_growth_param)
-
+sig_func_val = 14 # Tune this to achieve desired shape of sigmoid growth
+true_states = simulate_sigmoid_growth(mu0=mu0, max_growth=max_growth, K=K,
+                                      sig_func_val=sig_func_val)
+data = simulate_data(true_rates=true_states, n=n, J=J, delta_t=delta_t,
+                     y_init=y_init)
 
 ## Store true lambdas in Pandas dataframe ##
 
@@ -103,7 +107,7 @@ if J <= 10:
         nrows=J,
         ncols=1,
         sharex=True,
-        figsize=(8, 2.5 * n)
+        figsize=(8, 4 * n)
     )
     fig.suptitle("RW states over time", fontsize=14)
     
@@ -129,7 +133,9 @@ else:
 fk_boot = augssm.AugmentedBootstrap(ssm=ctmc_ssm, data=data)
 pf_boot = particles.SMC(fk=fk_boot, N=N, resampling='stratified', 
                         store_history=True, collect=[Moments()])
+print("Beginning the bootstrap particle filter.")
 pf_boot.run()
+print("Bootstrap particle filter finished.")
 
 ## Store lambda particles and weights in an xarray.Dataset ##
 
@@ -263,5 +269,26 @@ plt.show()
 
 # %%
 
+## Band plots: bad way ##
 
+# means_boot =  np.stack([m['mean'] for m in pf_boot.summaries.moments])
+# vars_boot = np.stack([m['var'] for m in pf_boot.summaries.moments])
 
+# for lam_idx, lam in enumerate(true_lams.columns):
+#     plt.plot(k_series, true_lams[lam].values, label=f"True {lam}",
+#              color='red', alpha=0.7)
+#     plt.plot(means_boot[..., lam_idx], color="green",
+#              label="PF mean", alpha=0.7)
+#     plt.fill_between(k_series, 
+#                      y1=(means_boot[..., lam_idx]
+#                          -2*np.sqrt(vars_boot[..., lam_idx])), 
+#                      y2=(means_boot[..., lam_idx]
+#                          +2*np.sqrt(vars_boot[..., lam_idx])), 
+#                      color="green", alpha=0.3)
+#     plt.legend()
+#     plt.xlabel("k")
+#     plt.ylabel(f"Value of {lam}")
+#     p, q = lams_idx_to_gen_pos(lam_idx, n)
+#     plt.title(f"Boot PF band plot (bad way): $\\lambda^{{{p} \\to {q}}}$ | "
+#               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
+#     plt.show()
