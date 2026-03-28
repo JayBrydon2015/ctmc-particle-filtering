@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
-""" Bootstrap PF """
+""" Guided PF """
 
-## Required since ctmc_boot is not in root folder ##
+## Required since ctmc_guided is not in root folder ##
 import sys
 from pathlib import Path
 
@@ -41,7 +41,7 @@ from rates_simulation.true_rates_simulation_funtions import (
 delta_t = 0.02 # Time between observations
 C = 1 # Transition variance parameter
 n = 2 # Number of states in CTMC
-J = 10 # Number of random walkers
+J = 5 # Number of random walkers
 mu0  = np.array([2, 3]) # For P(A_0)
 var0 = np.array([0.2, 0.2]) # For P(A_0)
 
@@ -58,8 +58,8 @@ time_points = delta_t * k_series # [t_0, t_1, ..., t_K]
 ## Gamma dist. params. for PX0 ##
 a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
 
-## For a Bootstrap PF ##
-ctmc_ssm = CTMC(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0)
+## For a Guided PF ##
+ctmc_ssm = CTMC_prop(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0)
 
 ## Get y_init from ctmc_ssm object ##
 y_init = ctmc_ssm.y_init
@@ -130,32 +130,32 @@ else:
 
 ## Run the bootstrap PF ##
 
-fk_boot = augssm.AugmentedBootstrap(ssm=ctmc_ssm, data=data)
-pf_boot = particles.SMC(fk=fk_boot, N=N, resampling='stratified', 
+fk_guided = augssm.AugmentedGuidedPF(ssm=ctmc_ssm, data=data)
+pf_guided = particles.SMC(fk=fk_guided, N=N, resampling='stratified', 
                         store_history=True, collect=[Moments()])
-print("Beginning the bootstrap particle filter.")
-pf_boot.run()
-print("Bootstrap particle filter finished.")
+print("Beginning the guided particle filter.")
+pf_guided.run()
+print("Guided particle filter finished.")
 
 ## Store lambda particles and weights in an xarray.Dataset ##
 
-ds_boot = xr.Dataset({
+ds_guided = xr.Dataset({
     'X': xr.DataArray(
-        np.stack([pf_boot.hist.X[k] for k in k_series]),
+        np.stack([pf_guided.hist.X[k] for k in k_series]),
         dims=("k", "particle", "lam"),
         coords={
             "k": k_series,
             "lam": true_lams.columns.values,
         },
-        name="Bootstrap PF Particles"
+        name="Guided PF Particles"
     ),
     'W': xr.DataArray(
-        np.stack([pf_boot.hist.wgts[k].W for k in k_series]),
+        np.stack([pf_guided.hist.wgts[k].W for k in k_series]),
         dims=("k", "weight"),
         coords={
             "k": k_series
         },
-        name="Bootstrap PF Weights"
+        name="Guided PF Weights"
     )
 })
 
@@ -178,10 +178,10 @@ def weighted_quantile(values, weights, quantiles):
 
 qs = np.array([0.05, 0.5, 0.95]) # 95% interval & median
 
-ds_boot["X_quantiles"] = xr.apply_ufunc(
+ds_guided["X_quantiles"] = xr.apply_ufunc(
     weighted_quantile,
-    ds_boot["X"],
-    ds_boot["W"],
+    ds_guided["X"],
+    ds_guided["W"],
     input_core_dims=[["particle"], ["weight"]],
     output_core_dims=[["quantile"]],
     vectorize=True,
@@ -195,9 +195,9 @@ ds_boot["X_quantiles"] = xr.apply_ufunc(
 ## Band plots: 5th quantile, median, 95th quantile ##
 
 for lam_idx, lam in enumerate(true_lams.columns):
-    median = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.5)
-    lq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.05)
-    uq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.95)
+    median = ds_guided["X_quantiles"].sel(lam=lam, quantile=0.5)
+    lq = ds_guided["X_quantiles"].sel(lam=lam, quantile=0.05)
+    uq = ds_guided["X_quantiles"].sel(lam=lam, quantile=0.95)
     plt.plot(k_series, true_lams[lam].values, label=f"True {lam}",
              color='red', alpha=0.7)
     plt.plot(median, color="green",
@@ -210,7 +210,8 @@ for lam_idx, lam in enumerate(true_lams.columns):
     plt.xlabel("k")
     plt.ylabel(f"Value of {lam}")
     p, q = lams_idx_to_gen_pos(lam_idx, n)
-    plt.title(f"Boot PF band plot (quantiles): $\\lambda^{{{p} \\to {q}}}$ | "
+    plt.title("Guided PF band plot (quantiles): "
+              + f"$\\lambda^{{{p} \\to {q}}}$ | "
               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
     plt.show()
 
@@ -218,10 +219,10 @@ for lam_idx, lam in enumerate(true_lams.columns):
 
 ## ESS ##
 
-plt.plot(k_series, pf_boot.summaries.ESSs, color="red")
+plt.plot(k_series, pf_guided.summaries.ESSs, color="red")
 plt.xlabel("k")
 plt.ylabel("ESS")
-plt.title("ESS over time: Boot PF | "
+plt.title("ESS over time: Guided PF | "
           + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
 plt.show()
 
@@ -237,15 +238,15 @@ k = np.random.randint(K+1)
 
 for lam in true_lams.columns:
     fig, ax = plt.subplots(figsize=(8, 6))
-    sns.kdeplot(x=ds_boot["X"].sel({'lam': lam, 'k': k}).values.reshape(-1),
-                weights=ds_boot["W"].sel({'k': k}).values.reshape(-1),
+    sns.kdeplot(x=ds_guided["X"].sel({'lam': lam, 'k': k}).values.reshape(-1),
+                weights=ds_guided["W"].sel({'k': k}).values.reshape(-1),
                 ax=ax, fill=True,
                 color="skyblue", label="Boot")
     ax.axvline(x=true_lams.loc[k][lam], color='red', linestyle=':',
                linewidth=1.5, label='True state')
     ax.set_xlabel("Value")
     ax.set_ylabel("Density")
-    ax.set_title(f"Boot Filtering Dist. @ k = {k}: {lam}")
+    ax.set_title(f"Guided Filtering Dist. @ k = {k}: {lam}")
     ax.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.show()
@@ -255,7 +256,7 @@ for lam in true_lams.columns:
 ## Pairwise scatter plots of particles (not using weights) ##
 
 plot_df = (
-    ds_boot["X"].sel(k=k)
+    ds_guided["X"].sel(k=k)
     .to_pandas() # index: particle, columns: lambda
     .reset_index(drop=True)
 )
@@ -264,31 +265,32 @@ sns.pairplot(
     plot_df,
     plot_kws={"alpha": 0.5, "s": 15}
 )
-plt.suptitle(f"Pairwise scatter at k = {k}: Boot PF", y=1.02)
+plt.suptitle(f"Pairwise scatter at k = {k}: Guided PF", y=1.02)
 plt.show()
 
 # %%
 
 ## Band plots: bad way ##
 
-# means_boot =  np.stack([m['mean'] for m in pf_boot.summaries.moments])
-# vars_boot = np.stack([m['var'] for m in pf_boot.summaries.moments])
+# means_guided =  np.stack([m['mean'] for m in pf_guided.summaries.moments])
+# vars_guided = np.stack([m['var'] for m in pf_guided.summaries.moments])
 
 # for lam_idx, lam in enumerate(true_lams.columns):
 #     plt.plot(k_series, true_lams[lam].values, label=f"True {lam}",
 #              color='red', alpha=0.7)
-#     plt.plot(means_boot[..., lam_idx], color="green",
+#     plt.plot(means_guided[..., lam_idx], color="green",
 #              label="PF mean", alpha=0.7)
 #     plt.fill_between(k_series, 
-#                      y1=(means_boot[..., lam_idx]
-#                          -2*np.sqrt(vars_boot[..., lam_idx])), 
-#                      y2=(means_boot[..., lam_idx]
-#                          +2*np.sqrt(vars_boot[..., lam_idx])), 
+#                      y1=(means_guided[..., lam_idx]
+#                          -2*np.sqrt(vars_guided[..., lam_idx])), 
+#                      y2=(means_guided[..., lam_idx]
+#                          +2*np.sqrt(vars_guided[..., lam_idx])), 
 #                      color="green", alpha=0.3)
 #     plt.legend()
 #     plt.xlabel("k")
 #     plt.ylabel(f"Value of {lam}")
 #     p, q = lams_idx_to_gen_pos(lam_idx, n)
-#     plt.title(f"Boot PF band plot (bad way): $\\lambda^{{{p} \\to {q}}}$ | "
+#     plt.title("Guided PF band plot (bad way): "
+#               + f"$\\lambda^{{{p} \\to {q}}}$ | "
 #               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
 #     plt.show()

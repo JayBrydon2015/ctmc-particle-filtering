@@ -65,6 +65,26 @@ def compute_transition_prob_matrix(lams, n, delta_t):
     ## Option 2: better ##
     return expm(delta_t * lams_to_gen(lams))
 
+def compute_weighted_mean_var(x, lw):
+    """ Computes the weighted mean and variance along axis 0 of x.
+        lw is the log-weights, which need to be transformed and normalised.
+        
+        --- Inputs ---
+        x: ndarray of shape (N, L)
+        lw: ndarray of shape (N,)
+        
+        --- Outputs ---
+        mean: ndarray of shape (L,)
+        var: ndarray of shape (L,)
+        
+        Returns the tuple (mean, var)
+    """
+    w = np.exp(lw) # Exponentiate log-weights
+    w = w / w.sum() # Normalise weights
+    mean = (w[:, None] * x).sum(axis=0)
+    var = (w[:, None] * (x - mean)**2).sum(axis=0)
+    return mean, var
+
 
 ## CTMC SSM Classes ##
 
@@ -95,7 +115,7 @@ class CTMC_old(augssm.AugmentedStateSpaceModel):
             self.b0 = gen_to_lams(self.b0)
         lams_dists = [dists.Gamma(a, b) for a, b in zip(self.a0, self.b0)]
         return dists.IndepProd(*lams_dists)
-    
+
     def PX(self, t, xp):
         ## Option 1: Var = lambda * DELTA_T * C ##
         
@@ -116,7 +136,7 @@ class CTMC_old(augssm.AugmentedStateSpaceModel):
         #               for l in range(alpha.shape[1])]
         
         return dists.IndepProd(*lams_dists)
-    
+
     def get_cat_dist(self, P_mat, y_i):
         return dists.Categorical(P_mat[np.arange(P_mat.shape[0]), y_i])
 
@@ -226,12 +246,41 @@ class CTMC(augssm.AugmentedStateSpaceModel):
 class CTMC_prop(CTMC):
     """ CTMC SSM with proposal.
     
-        CURRENTLY NOT WORKING!
+        ----- New parameters -----
+        Np: number of temporary particles used to calculate proposal
+        parameters for proposal0. Keep large enough (at least in the
+        hundreds, say). For proposal, the number of temporary particles
+        sampled using PX is the actual number of particles N (xp.shape[0]).
+        
+        Currently performs badly.
     """
     
+    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None, Np=1000):
+        self.n = n
+        self.J = J
+        self.delta_t = delta_t
+        self.C = C
+        self.a0 = a0
+        self.b0 = b0
+        if y_init is None:
+            self.y_init = np.sort(np.array([i % self.n
+                                            for i in range(self.J)]))
+        else:
+            self.y_init = y_init
+        self.Np = Np
+    
     def proposal0(self, data):
-        raise NotImplementedError()
+        x_temp = self.PX0().rvs(size=self.Np)
+        lw_temp = self.PY(0, None, x_temp).logpdf(data[0])
+        mean, var = compute_weighted_mean_var(x_temp, lw_temp)
+        alpha, beta = get_gamma_params_from_mean_var(mean, var)
+        lams_dists = [dists.Gamma(a, b) for a, b in zip(alpha, beta)]
+        return dists.IndepProd(*lams_dists)
     
     def proposal(self, t, xp, data):
-        raise NotImplementedError()
-
+        x_temp = self.PX(t, xp).rvs(size=xp.shape[0])
+        lw_temp = self.PY(t, xp, x_temp, data[t-1]).logpdf(data[t])
+        mean, var = compute_weighted_mean_var(x_temp, lw_temp)
+        alpha, beta = get_gamma_params_from_mean_var(mean, var)
+        lams_dists = [dists.Gamma(a, b) for a, b in zip(alpha, beta)]
+        return dists.IndepProd(*lams_dists)
