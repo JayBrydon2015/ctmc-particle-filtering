@@ -79,10 +79,13 @@ def compute_weighted_mean_var(x, lw):
         
         Returns the tuple (mean, var)
     """
-    w = np.exp(lw) # Exponentiate log-weights
-    w = w / w.sum() # Normalise weights
-    mean = (w[:, None] * x).sum(axis=0)
-    var = (w[:, None] * (x - mean)**2).sum(axis=0)
+    lw[np.isnan(lw)] = -np.inf
+    m = lw.max()
+    w = np.exp(lw - m)
+    s = w.sum()
+    W = w / s
+    mean = (W[:, None] * x).sum(axis=0)
+    var = (W[:, None] * (x - mean)**2).sum(axis=0)
     return mean, var
 
 
@@ -189,6 +192,9 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         self.C = C
         self.a0 = a0
         self.b0 = b0
+        if len(self.a0.shape) > 1: # Currently a (n, n) ndarray
+            self.a0 = gen_to_lams(self.a0)
+            self.b0 = gen_to_lams(self.b0)
         if y_init is None:
             self.y_init = np.sort(np.array([i % self.n
                                             for i in range(self.J)]))
@@ -196,9 +202,6 @@ class CTMC(augssm.AugmentedStateSpaceModel):
             self.y_init = y_init
 
     def PX0(self):
-        if len(self.a0.shape) > 1: # Currently a (n, n) ndarray
-            self.a0 = gen_to_lams(self.a0)
-            self.b0 = gen_to_lams(self.b0)
         lams_dists = [dists.Gamma(a, b) for a, b in zip(self.a0, self.b0)]
         return dists.IndepProd(*lams_dists)
     
@@ -247,33 +250,50 @@ class CTMC_prop(CTMC):
     """ CTMC SSM with proposal.
     
         ----- New parameters -----
+        
         Np: number of temporary particles used to calculate proposal
         parameters for proposal0. Keep large enough (at least in the
         hundreds, say). For proposal, the number of temporary particles
         sampled using PX is the actual number of particles N (xp.shape[0]).
         
-        Currently performs badly.
+        kappa: the balance between using the bootstrap filtering parameters
+        and the usual parameters in self.PX & self.PX0.
     """
     
-    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None, Np=1000):
+    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None,
+                 Np=1000, kappa=0.5, kappa0=0.8):
         self.n = n
         self.J = J
         self.delta_t = delta_t
         self.C = C
         self.a0 = a0
         self.b0 = b0
+        if len(self.a0.shape) > 1: # Currently a (n, n) ndarray
+            self.a0 = gen_to_lams(self.a0)
+            self.b0 = gen_to_lams(self.b0)
         if y_init is None:
             self.y_init = np.sort(np.array([i % self.n
                                             for i in range(self.J)]))
         else:
             self.y_init = y_init
         self.Np = Np
+        self.kappa0 = kappa0
+        if self.kappa0 < 0 or self.kappa0 > 1:
+            raise ValueError("kappa0 needs to be between 0 and 1 (inclusive).")
+        self.kappa = kappa
+        if self.kappa < 0 or self.kappa > 1:
+            raise ValueError("kappa needs to be between 0 and 1 (inclusive).")
     
     def proposal0(self, data):
         x_temp = self.PX0().rvs(size=self.Np)
         lw_temp = self.PY(0, None, x_temp).logpdf(data[0])
         mean, var = compute_weighted_mean_var(x_temp, lw_temp)
-        alpha, beta = get_gamma_params_from_mean_var(mean, var)
+        
+        new_mean = self.kappa0 * self.a0 / self.b0 + (1 - self.kappa0) * mean
+        new_var = ( self.kappa0 * self.a0 / self.b0 ** 2
+                    + (1 - self.kappa0) * var )
+        
+        alpha, beta = get_gamma_params_from_mean_var(new_mean, new_var)
         lams_dists = [dists.Gamma(a, b) for a, b in zip(alpha, beta)]
         return dists.IndepProd(*lams_dists)
     
@@ -281,6 +301,23 @@ class CTMC_prop(CTMC):
         x_temp = self.PX(t, xp).rvs(size=xp.shape[0])
         lw_temp = self.PY(t, xp, x_temp, data[t-1]).logpdf(data[t])
         mean, var = compute_weighted_mean_var(x_temp, lw_temp)
-        alpha, beta = get_gamma_params_from_mean_var(mean, var)
-        lams_dists = [dists.Gamma(a, b) for a, b in zip(alpha, beta)]
+        
+        # print(f"t: {t} | mean: {mean} | var: {var}")
+        # if np.isnan(mean).any():
+        #     print()
+        #     print(x_temp)
+        #     print()
+        #     print(lw_temp)
+        #     raise ValueError("nan encountered.")
+        
+        if np.isnan(mean).any() or np.isnan(var).any():
+            return self.PX(t, xp)
+        
+        new_mean = self.kappa * xp + ( 1 - self.kappa) * mean
+        new_var = ( self.kappa * self.C * self.delta_t * xp
+                   + (1 - self.kappa) * var)
+        
+        alpha, beta = get_gamma_params_from_mean_var(new_mean, new_var)
+        lams_dists = [dists.Gamma(alpha[:, l], beta[:, l])
+                      for l in range(alpha.shape[1])]
         return dists.IndepProd(*lams_dists)

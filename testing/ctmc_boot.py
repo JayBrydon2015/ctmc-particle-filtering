@@ -41,13 +41,13 @@ from rates_simulation.true_rates_simulation_funtions import (
 delta_t = 0.02 # Time between observations
 C = 1 # Transition variance parameter
 n = 2 # Number of states in CTMC
-J = 10 # Number of random walkers
+J = 5 # Number of random walkers
 mu0  = np.array([2, 3]) # For P(A_0)
 var0 = np.array([0.2, 0.2]) # For P(A_0)
 
 ## Particle filtering, simulation and other parameters ##
 
-N = 1000 # Number of particles in PFs
+N = 300 # Number of particles in PFs
 
 K = 300 # k = 0, ..., K
 k_series = np.arange(K + 1) # [0, 1, ..., K]

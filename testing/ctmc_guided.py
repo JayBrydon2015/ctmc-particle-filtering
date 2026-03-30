@@ -47,7 +47,7 @@ var0 = np.array([0.2, 0.2]) # For P(A_0)
 
 ## Particle filtering, simulation and other parameters ##
 
-N = 1000 # Number of particles in PFs
+N = 300 # Number of particles in PFs
 
 K = 300 # k = 0, ..., K
 k_series = np.arange(K + 1) # [0, 1, ..., K]
@@ -59,7 +59,8 @@ time_points = delta_t * k_series # [t_0, t_1, ..., t_K]
 a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
 
 ## For a Guided PF ##
-ctmc_ssm = CTMC_prop(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0)
+ctmc_ssm = CTMC_prop(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0,
+                     y_init=None, Np=1000, kappa=1, kappa0=1)
 
 ## Get y_init from ctmc_ssm object ##
 y_init = ctmc_ssm.y_init
