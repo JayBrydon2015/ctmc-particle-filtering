@@ -173,7 +173,13 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         a0: Gamma dist alpha parameters for PX0 in (n, n) ndarray
         b0: Gamma dist beta parameters for PX0 in (n, n) ndarray
         y_init: initial configuration of RWs (set to None or don't pass 
-                into initialisation if using the default)
+          into initialisation if using the default)
+        px_var_flag: decides which transition variance to use (see PX). If
+          False (the default), the variance of \lambda_{k+1} | \lambda_{k} is
+          \lambda_{k} * DELTA_T * C; if True, it is DELTA_T * C.
+        reg_term: a small constant added to beta in Option 2 in PX to help
+          numberical stability.
+         px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
 
         ----- Notes -----
         - Track lams_list rather than generator A
@@ -185,7 +191,8 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         - y_init: ndarray of shape (J, )
     """
     
-    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None):
+    def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None,
+                 px_var_flag=False, reg_term=1e-6, px_verbose=False):
         self.n = n
         self.J = J
         self.delta_t = delta_t
@@ -200,30 +207,30 @@ class CTMC(augssm.AugmentedStateSpaceModel):
                                             for i in range(self.J)]))
         else:
             self.y_init = y_init
+        self.px_var_flag = px_var_flag
+        self.reg_term = reg_term
+        self.px_verbose = px_verbose
 
     def PX0(self):
         lams_dists = [dists.Gamma(a, b) for a, b in zip(self.a0, self.b0)]
         return dists.IndepProd(*lams_dists)
     
     def PX(self, t, xp):
-        ## Option 1: Var = lambda * DELTA_T * C ##
-        
-        alpha = xp / self.delta_t
-        beta_i = np.repeat(1/self.delta_t, alpha.shape[0])
-        alpha  /= self.C
-        beta_i /= self.C
-        lams_dists = [dists.Gamma(alpha[:, l], beta_i)
-                      for l in range(alpha.shape[1])]
-        
-        ## Option 2: Var = DELTA_T * C ##
-        
-        # alpha = xp["lams"] ** 2 / self.delta_t
-        # beta = xp["lams"] / self.delta_t
-        # alpha /= self.C
-        # beta  /= self.C
-        # lams_dists = [dists.Gamma(alpha[:,l], beta[:, l])
-        #               for l in range(alpha.shape[1])]
-        
+        if self.px_verbose and t % 20 == 0:
+            print("t:", t)
+        Dt_times_C = self.delta_t * self.C
+        if not self.px_var_flag:
+            ## Option 1 (default): Var = lambda * DELTA_T * C ##
+            alpha = xp / Dt_times_C
+            beta_i = np.repeat(1 / Dt_times_C, alpha.shape[0])
+            lams_dists = [dists.Gamma(alpha[:, l], beta_i)
+                          for l in range(alpha.shape[1])]
+        else:
+            ## Option 2: Var = DELTA_T * C ##
+            alpha = xp ** 2 / Dt_times_C
+            beta  = xp / Dt_times_C + self.reg_term
+            lams_dists = [dists.Gamma(alpha[:,l], beta[:, l])
+                          for l in range(alpha.shape[1])]
         return dists.IndepProd(*lams_dists)
     
     def get_cat_dist(self, P_mat, y_i):
