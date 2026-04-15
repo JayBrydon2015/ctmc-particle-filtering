@@ -121,7 +121,7 @@ if J <= 10:
         nrows=J,
         ncols=1,
         sharex=True,
-        figsize=(8, 4 * n)
+        figsize=(8, 3)
     )
     fig.suptitle("RW states over time", fontsize=14)
     
