@@ -8,10 +8,22 @@ from pathlib import Path
 
 sys.path.append(str(Path.cwd().parents[0]))
 
+## CONSTANTS ##
+
+PLOT_ROOT_FOLDER_NAME = "generated_plots"
+EXAMPLE_FOLDER_NAME = "ExampleB2"
+# Choose whether to show all plots, or save the plots for thesis
+SAVE_PLOTS = True
+
 ## Imports ##
 
 import numpy as np
-import matplotlib.pyplot as plt
+if SAVE_PLOTS:
+    import matplotlib
+    matplotlib.use('Agg') # Must be called before importing pyplot
+    import matplotlib.pyplot as plt
+else:
+    import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import xarray as xr
@@ -24,6 +36,7 @@ from ctmc_modules.ctmc_ssms import (
     compute_transition_prob_matrix,
     CTMC,
     CTMC_prop,
+    get_option_num_for_transition_dist,
 )
 
 import particles
@@ -34,20 +47,31 @@ from rates_simulation.true_rates_simulation_funtions import (
     simulate_sine_rates_n2, simulate_data, simulate_example_a
 )
 
+## FUNCTIONS ##
+
+def get_latex_rate_symbol(p, q):
+    """ Returns the correct symbol for the corresponding (p, q).
+        Returns symbol or expression as a LaTeX math expression.
+        Also returns the name of the rate used in the image file
+        name.
+    """
+    return f"$\\lambda^{{{p} \\to {q}}}$", f"L{p}{q}"
+
 # %%
 
 ## CTMC SSM Parameters ##
 
-delta_t = 0.02 # Time between observations
+delta_t = 0.01 # Time between observations
 C = 1 # Transition variance parameter
 n = 2 # Number of states in CTMC
-J = 500 # Number of random walkers
-mu0  = np.array([0.5, 0.5]) # For P(A_0)
-var0 = np.array([0.25, 0.25]) # For P(A_0)
+J = 8 # Number of random walkers
+mu0  = np.array([1.5, 4]) # For P(A_0)
+var0 = np.array([2, 2]) # For P(A_0)
+px_var_flag = False
 
 ## Particle filtering, simulation and other parameters ##
 
-N = 3000 # Number of particles in PFs
+N = 10000 # Number of particles in PFs
 
 K = 300 # k = 0, ..., K
 k_series = np.arange(K + 1) # [0, 1, ..., K]
@@ -59,7 +83,8 @@ time_points = delta_t * k_series # [t_0, t_1, ..., t_K]
 a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
 
 ## For a Bootstrap PF ##
-ctmc_ssm = CTMC(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0)
+ctmc_ssm = CTMC(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0,
+                px_var_flag=px_var_flag, px_verbose=True)
 
 ## Get y_init from ctmc_ssm object ##
 y_init = ctmc_ssm.y_init
@@ -68,7 +93,9 @@ y_init = ctmc_ssm.y_init
 
 ## Sine wave true rates ##
 
-true_states = simulate_sine_rates_n2(K=K)
+phi = np.array([np.pi / 4, np.pi / 2])
+
+true_states = simulate_sine_rates_n2(K=K, phi=phi)
 data = simulate_data(true_rates=true_states, n=n, J=J, delta_t=delta_t,
                      y_init=y_init)
 
@@ -91,7 +118,17 @@ plt.ylabel("Value")
 plt.title("True rates over time")
 plt.legend()
 plt.tight_layout()
-plt.show()
+if SAVE_PLOTS:
+    op_num = get_option_num_for_transition_dist(px_var_flag)
+    folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
+                       + f"{EXAMPLE_FOLDER_NAME}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+    image_name = "ExB_True_Rates.png"
+    plt.savefig(folder_path / image_name,
+                bbox_inches='tight')
+    plt.close("all")
+else:
+    plt.show()
 
 # %%
 
@@ -119,7 +156,17 @@ if J <= 10:
     
     axes[-1].set_xlabel("k")
     plt.tight_layout()
-    plt.show()
+    if SAVE_PLOTS:
+        op_num = get_option_num_for_transition_dist(px_var_flag)
+        folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
+                           + f"{EXAMPLE_FOLDER_NAME}/Option {op_num}; J={J}")
+        folder_path.mkdir(parents=True, exist_ok=True)
+        image_name = f"RW_States_J{J}_Op{op_num}.png"
+        plt.savefig(folder_path / image_name,
+                    bbox_inches='tight')
+        plt.close("all")
+    else:
+        plt.show()
 else:
     print(f"Too many random walkers to plot: {J} RWs.")
 
@@ -192,10 +239,13 @@ ds_boot["X_quantiles"] = xr.apply_ufunc(
 ## Band plots: 5th quantile, median, 95th quantile ##
 
 for lam_idx, lam in enumerate(true_lams.columns):
+    p, q = lams_idx_to_gen_pos(lam_idx, n)
+    latex_symbol, rate_name_img = get_latex_rate_symbol(p, q)
+    
     median = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.5)
     lq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.05)
     uq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.95)
-    plt.plot(k_series, true_lams[lam].values, label=f"True {lam}",
+    plt.plot(k_series, true_lams[lam].values, label=f"True {latex_symbol}",
              color='red', alpha=0.7)
     plt.plot(median, color="green",
              label="PF mean", alpha=0.7)
@@ -205,11 +255,20 @@ for lam_idx, lam in enumerate(true_lams.columns):
                      color="green", alpha=0.3)
     plt.legend()
     plt.xlabel("k")
-    plt.ylabel(f"Value of {lam}")
-    p, q = lams_idx_to_gen_pos(lam_idx, n)
-    plt.title(f"Boot PF band plot (quantiles): $\\lambda^{{{p} \\to {q}}}$ | "
+    plt.ylabel(f"Value of {latex_symbol}")
+    plt.title(f"Boot PF band plot (quantiles): {latex_symbol} | "
               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
-    plt.show()
+    if SAVE_PLOTS:
+        op_num = get_option_num_for_transition_dist(px_var_flag)
+        folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
+                           + f"{EXAMPLE_FOLDER_NAME}/Option {op_num}; J={J}")
+        folder_path.mkdir(parents=True, exist_ok=True)
+        image_name = f"Quantiles_{rate_name_img}_J{J}_Op{op_num}.png"
+        plt.savefig(folder_path / image_name,
+                    bbox_inches='tight')
+        plt.close("all")
+    else:
+        plt.show()
 
 # %%
 
@@ -220,7 +279,17 @@ plt.xlabel("k")
 plt.ylabel("ESS")
 plt.title("ESS over time: Boot PF | "
           + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
-plt.show()
+if SAVE_PLOTS:
+    op_num = get_option_num_for_transition_dist(px_var_flag)
+    folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
+                       + f"{EXAMPLE_FOLDER_NAME}/Option {op_num}; J={J}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+    image_name = f"ESS_J{J}_Op{op_num}.png"
+    plt.savefig(folder_path / image_name,
+                bbox_inches='tight')
+    plt.close("all")
+else:
+    plt.show()
 
 # %%
 
@@ -232,37 +301,39 @@ k = np.random.randint(K+1)
 
 ## KDE for each lam (uses weights of particles) ##
 
-for lam in true_lams.columns:
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.kdeplot(x=ds_boot["X"].sel({'lam': lam, 'k': k}).values.reshape(-1),
-                weights=ds_boot["W"].sel({'k': k}).values.reshape(-1),
-                ax=ax, fill=True,
-                color="skyblue", label="Boot")
-    ax.axvline(x=true_lams.loc[k][lam], color='red', linestyle=':',
-               linewidth=1.5, label='True state')
-    ax.set_xlabel("Value")
-    ax.set_ylabel("Density")
-    ax.set_title(f"Boot Filtering Dist. @ k = {k}: {lam}")
-    ax.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.show()
+if not SAVE_PLOTS:
+    for lam in true_lams.columns:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.kdeplot(x=ds_boot["X"].sel({'lam': lam, 'k': k}).values.reshape(-1),
+                    weights=ds_boot["W"].sel({'k': k}).values.reshape(-1),
+                    ax=ax, fill=True,
+                    color="skyblue", label="Boot")
+        ax.axvline(x=true_lams.loc[k][lam], color='red', linestyle=':',
+                   linewidth=1.5, label='True state')
+        ax.set_xlabel("Value")
+        ax.set_ylabel("Density")
+        ax.set_title(f"Boot Filtering Dist. @ k = {k}: {lam}")
+        ax.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.show()
 
 # %%
 
 ## Pairwise scatter plots of particles (not using weights) ##
 
-plot_df = (
-    ds_boot["X"].sel(k=k)
-    .to_pandas() # index: particle, columns: lambda
-    .reset_index(drop=True)
-)
-
-sns.pairplot(
-    plot_df,
-    plot_kws={"alpha": 0.5, "s": 15}
-)
-plt.suptitle(f"Pairwise scatter at k = {k}: Boot PF", y=1.02)
-plt.show()
+if not SAVE_PLOTS:
+    plot_df = (
+        ds_boot["X"].sel(k=k)
+        .to_pandas() # index: particle, columns: lambda
+        .reset_index(drop=True)
+    )
+    
+    sns.pairplot(
+        plot_df,
+        plot_kws={"alpha": 0.5, "s": 15}
+    )
+    plt.suptitle(f"Pairwise scatter at k = {k}: Boot PF", y=1.02)
+    plt.show()
 
 # %%
 

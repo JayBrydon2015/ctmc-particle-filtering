@@ -1,3 +1,4 @@
-/.spyproject/
+.spyproject
 **/__pycache__/
 .ipynb_checkpoints
+testing/generated_plots

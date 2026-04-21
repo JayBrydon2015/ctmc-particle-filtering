@@ -16,6 +16,15 @@ from particles import distributions as dists
 
 ## Functions ##
 
+def get_option_num_for_transition_dist(px_var_flag):
+    """ Get the option number based on the transition distribution used.
+        Mainly used for saving the plots with the correct names, etc.
+        Only currently for whether px_var_flag is True or False.
+    """
+    if px_var_flag:
+        return 2
+    return 1
+
 def get_gamma_params_from_mean_var(mean, var):
     """ Compute the Gamma distribution parameters, alpha
         and beta, from the mean and variance.
