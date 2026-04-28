@@ -97,6 +97,9 @@ def compute_weighted_mean_var(x, lw):
     var = (W[:, None] * (x - mean)**2).sum(axis=0)
     return mean, var
 
+def kernel_se(t1, t2, l, C=1):
+    """ Squared exponential kernel. """
+    return C * np.exp( - (t1 - t2) ** 2 / (2 * l ** 2) )
 
 ## CTMC SSM Classes ##
 
@@ -337,3 +340,100 @@ class CTMC_prop(CTMC):
         lams_dists = [dists.Gamma(alpha[:, l], beta[:, l])
                       for l in range(alpha.shape[1])]
         return dists.IndepProd(*lams_dists)
+
+
+class GP_CTMC(augssm.AugmentedStateSpaceModel):
+    """ CTMC Augmented SSM with the log-rates modelled via
+        a Gaussian process.
+
+        ----- Parameters -----
+        n: number of states
+        J: number of random walkers
+        delta_t: real time between observations
+        l: scaling parameter in Kernal function
+        mu0: the means of the rates (not logged) for PX0. Of shape
+          (n*(n-1), ) or (n, n).
+        var0: the vars of the log-rates for PX0. Of shape (n*(n-1), )
+          or (n, n).
+        y_init: initial configuration of RWs (set to None or don't pass 
+          into initialisation if using the default)
+        px_var_flag: decides which transition variance to use (see PX). If
+          False (the default), the variance of \lambda_{k+1} | \lambda_{k} is
+          \lambda_{k} * DELTA_T * C; if True, it is DELTA_T * C.
+        reg_term: a small constant added to beta in Option 2 in PX to help
+          numberical stability.
+         px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
+
+        ----- Notes -----
+        - Track lams_list rather than generator A
+        - lams are now actually the logged rates
+        - y defined as in type 4
+        - SSM starts with the RWs spread across the states as evenly as
+          possible by default (y_init == None)
+        - y (data[k]): ndarray of shape (1, J), by convention
+        - lams: ndarray of shape (n*(n-1), )
+        - y_init: ndarray of shape (J, )
+        - the mean function m(t) is just constant and is mu0.
+    """
+    
+    def __init__(self, *, n, J, delta_t, l, mu0, scale0, y_init=None,
+                 px_verbose=False):
+        self.n = n
+        self.J = J
+        self.delta_t = delta_t
+        self.l = l
+        self.mu0 = mu0
+        self.scale0 = scale0
+        if len(self.mu0.shape) > 1: # Currently a (n, n) ndarray
+            self.mu0 = gen_to_lams(self.mu0)
+        self.lmu0 = np.log(self.mu0)
+        if len(self.scale0.shape) > 1: # Currently a (n, n) ndarray
+            self.scale0 = gen_to_lams(self.scale0)
+        if y_init is None:
+            self.y_init = np.sort(np.array([i % self.n
+                                            for i in range(self.J)]))
+        else:
+            self.y_init = y_init
+        self.px_verbose = px_verbose
+        
+        # Compute variance and covariance values
+        self.cov = kernel_se(0, self.delta_t, l, C=1)
+        self.var = kernel_se(0, 0, l, C=1)
+        self.px_scale = np.sqrt(self.var - self.cov ** 2 / self.var)
+
+    def PX0(self):
+        lams_dists = [dists.Normal(mean, scale)
+                      for mean, scale in zip(self.lmu0, self.scale0)]
+        return dists.IndepProd(*lams_dists)
+    
+    def PX(self, t, xp):
+        if self.px_verbose and t % 20 == 0:
+            print("t:", t)
+        
+        lams_dists = [
+            dists.Normal( (self.lmu0[i] - self.cov * (self.lmu0[i] - xp[:, i])
+                           / self.var), self.px_scale )
+            for i in range(xp.shape[1])
+        ]
+        
+        return dists.IndepProd(*lams_dists)
+    
+    def get_cat_dist(self, P_mat, y_i):
+        return dists.Categorical(P_mat[:, y_i])
+
+    def PY(self, t, xp, x, datap=None):
+        ## y ##
+        
+        if datap is None: # t == 0
+            datap = self.y_init
+        else: # t >= 1, datap == data[t-1]
+            # By convention, datap is originally of shape (1, J)
+            # Reshape it to (J, )
+            datap = datap.reshape(-1)
+        
+        exp_x = np.exp(x)
+        P_mat = np.stack([compute_transition_prob_matrix(cur_lams, self.n,
+                                                         self.delta_t)
+                          for cur_lams in exp_x], axis=0)
+        y_dists = [self.get_cat_dist(P_mat, y_i) for y_i in datap]
+        return dists.IndepProd(*y_dists)
