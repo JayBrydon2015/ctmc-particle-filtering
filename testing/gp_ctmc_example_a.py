@@ -2,18 +2,23 @@
 
 """ Bootstrap PF """
 
+
 ## Required since ctmc_boot is not in root folder ##
+
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path.cwd().parents[0]))
 
+
 ## CONSTANTS ##
 
 PLOT_ROOT_FOLDER_NAME = "generated_plots"
-EXAMPLE_FOLDER_NAME = "ExampleA"
+EXAMPLE_FOLDER_NAME = "CTMC_ExampleA_Figs"
 # Choose whether to show all plots, or save the plots for thesis
 SAVE_PLOTS = False
+PLOT_EXTRAS = False # Plot extra stuff
+
 
 ## Imports ##
 
@@ -45,6 +50,7 @@ from rates_simulation.true_rates_simulation_funtions import (
     simulate_example_a, simulate_data
 )
 
+
 ## FUNCTIONS ##
 
 def get_latex_rate_symbol(p, q):
@@ -63,24 +69,42 @@ def get_latex_rate_symbol(p, q):
         return f"$\\lambda^{{{p} \\to {q}}}$", f"L{p}{q}"
 
 
+## Plotting Config ##
+
+# plt.rcParams.update({
+#     'font.size': 14,
+#     'axes.titlesize': 16,
+#     'axes.labelsize': 14,
+#     'xtick.labelsize': 14,
+#     'ytick.labelsize': 14,
+#     'legend.fontsize': 14
+# })
+
+
 # %%
 
 ## CTMC SSM Parameters ##
 
 delta_t = 0.01 # Time between observations
-l = 4 # SE Kernel parameter
+l = 0.8 # SE Kernel parameter
 n = 3 # Number of states in CTMC
-J = 1000 # Number of random walkers
-mu0  = np.array([1, 0.1, 0.1, 1, 4, 0.1]) # For P(A_0), a vague prior
-scale0 = np.array([0.3, 0.09, 0.09, 0.3, 0.5, 0.09]) # For P(A_0), a vague prior
+J = 8 # Number of random walkers
+mu0  = np.array([1.2, 0.5, 0.5, 0.9, 5, 0.5]) # For P(A_0)
+scale0 = np.array([1, 1, 1, 1, 2, 1]) # For P(A_0)
 
 ## Particle filtering, simulation and other parameters ##
 
-N = 1000 # Number of particles in PFs
+N = 10000 # Number of particles in PFs
 
 K = 300 # k = 0, ..., K
 k_series = np.arange(K + 1) # [0, 1, ..., K]
 time_points = delta_t * k_series # [t_0, t_1, ..., t_K]
+
+
+## Strings for directories for saving the plots ##
+FOLDER_PATH_STR = (PLOT_ROOT_FOLDER_NAME + "/"
+                   + f"{EXAMPLE_FOLDER_NAME}/GP; J={J}; l={l}; Dt={delta_t}")
+
 
 # %%
 
@@ -111,50 +135,84 @@ true_lams = true_lams.rename_axis('k')
 
 ## Plot true rates ##
 
-for col in true_lams.columns:
-    plt.plot(k_series, true_lams[col], label=col)
-plt.xlabel("k")
-plt.ylabel("Value")
-plt.title("True rates over time")
-plt.legend()
-plt.tight_layout()
-if SAVE_PLOTS:
-    plt.show()
-    plt.close("all")
-else:
-    plt.show()
+if PLOT_EXTRAS:
+    for col in true_lams.columns:
+        plt.plot(k_series, true_lams[col], label=col)
+    plt.xlabel("k")
+    plt.ylabel("Value")
+    plt.title("True rates over time")
+    plt.legend()
+    plt.tight_layout()
+    if SAVE_PLOTS:
+        plt.show()
+        plt.close("all")
+    else:
+        plt.show()
 
 # %%
 
 ## Plot data (if J not too large) ##
 
-if J <= 10:
+data_plot_fontsize = 23
+data_plot_fontsize2 = 20
+
+if J <= 8:
     data_plot = np.vstack(data)
+    data_plot += 1 # '0' -> State 1, etc
     
-    fig, axes = plt.subplots(
-        nrows=J,
-        ncols=1,
-        sharex=True,
-        figsize=(8, 3)
-    )
-    fig.suptitle("RW states over time", fontsize=14)
+    if J == 8:
+        fig, axes = plt.subplots(
+            nrows=4,
+            ncols=2,
+            sharex=True,
+            figsize=(8, 8)
+        )
+        
+        axes = axes.flatten()
+        
+        for j in range(J):
+            axes[j].plot(k_series, data_plot[:, j], lw=2)
+            # axes[j].set_ylabel(f"RW #{j+1}", fontsize=data_plot_fontsize)
+            axes[j].tick_params(axis='both', labelsize=data_plot_fontsize)
+            axes[j].grid(True)
+            axes[j].set_ylim(0.8, 3.2)
+            axes[j].set_xlim(-10, 310)
+        
+        for ax in axes[-2:]:
+            ax.set_xlabel("k", fontsize=data_plot_fontsize)
+        
+        for ax in axes:
+            ax.set_xticks([0, 100, 200, 300])
+            ax.tick_params(axis='x', labelbottom=False)
+    else:
+        fig, axes = plt.subplots(
+            nrows=J,
+            ncols=1,
+            sharex=True,
+            figsize=(8, 4 * J)
+        )
+        
+        # Ensure axes is always iterable (important if J == 1)
+        if J == 1:
+            axes = [axes]
+        
+        for j in range(J):
+            axes[j].plot(k_series, data_plot[:, j], lw=2)
+            # axes[j].set_ylabel(f"RW #{j+1}", fontsize=data_plot_fontsize2)
+            axes[j].tick_params(axis='both', labelsize=data_plot_fontsize2)
+            axes[j].grid(True)
+            axes[j].set_ylim(0.8, 3.2)
+            axes[j].set_xlim(-10, 310)
+        
+        axes[-1].set_xlabel("k", fontsize=data_plot_fontsize2)
     
-    # Ensure axes is always iterable (important if J == 1)
-    if J == 1:
-        axes = [axes]
+    # fig.suptitle("RW states over time", fontsize=20)
     
-    for j in range(J):
-        axes[j].plot(k_series, data_plot[:, j])
-        axes[j].set_ylabel(f"RW #{j+1}")
-        axes[j].grid(True)
-    
-    axes[-1].set_xlabel("k")
     plt.tight_layout()
     if SAVE_PLOTS:
-        folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
-                           + f"{EXAMPLE_FOLDER_NAME}/GP; J={J}")
+        folder_path = Path(FOLDER_PATH_STR)
         folder_path.mkdir(parents=True, exist_ok=True)
-        image_name = f"RW_States_J{J}_GP.png"
+        image_name = "rw_data.png"
         plt.savefig(folder_path / image_name,
                     bbox_inches='tight')
         plt.close("all")
@@ -249,51 +307,72 @@ ds_boot["Exp_X_quantiles"] = xr.apply_ufunc(
 
 ## Band plots: 5th quantile, median, 95th quantile ##
 
+BP_MIN_YLIMS = [-0.1, -0.1, -0.1, -0.1, 0.5, -0.1]
+BP_MAX_YLIMS = [2, 2, 2, 2, 7, 2]
+fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+axes = axes.flatten()  # makes indexing easy: 0..5
+
 for lam_idx, lam in enumerate(true_lams.columns):
+    ax = axes[lam_idx]
+
     p, q = lams_idx_to_gen_pos(lam_idx, n)
     latex_symbol, rate_name_img = get_latex_rate_symbol(p, q)
     
     median = ds_boot["Exp_X_quantiles"].sel(lam=lam, quantile=0.5)
     lq = ds_boot["Exp_X_quantiles"].sel(lam=lam, quantile=0.05)
     uq = ds_boot["Exp_X_quantiles"].sel(lam=lam, quantile=0.95)
-    plt.plot(k_series, true_lams[lam].values, label=f"True {latex_symbol}",
-             color='red', alpha=0.7)
-    plt.plot(median, color="green",
-             label="PF mean", alpha=0.7)
-    plt.fill_between(k_series, 
-                     y1=lq, 
-                     y2=uq, 
-                     color="green", alpha=0.3)
-    plt.legend()
-    plt.xlabel("k")
-    plt.ylabel(f"Value of {latex_symbol}")
-    plt.title(f"Boot PF band plot (quantiles): {latex_symbol} | "
-              + f"J={J}; N={N}; $\Delta t$={delta_t}; l={l}")
-    if SAVE_PLOTS:
-        folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
-                           + f"{EXAMPLE_FOLDER_NAME}/GP; J={J}")
-        folder_path.mkdir(parents=True, exist_ok=True)
-        image_name = f"Quantiles_{rate_name_img}_J{J}_GP.png"
-        plt.savefig(folder_path / image_name,
-                    bbox_inches='tight')
-        plt.close("all")
-    else:
-        plt.show()
+
+    ax.plot(k_series, true_lams[lam].values,
+            label="True rate",
+            color='blue', alpha=0.8, lw=2)
+
+    ax.plot(k_series, median,
+            color="orange", label="PF median", alpha=0.7, lw=2)
+
+    ax.fill_between(k_series,
+                    y1=lq,
+                    y2=uq,
+                    color="orange", alpha=0.3, lw=2)
+
+    ax.set_ylim(BP_MIN_YLIMS[lam_idx], top=BP_MAX_YLIMS[lam_idx])
+    ax.set_xlabel("k", fontsize=20)
+    ax.set_ylabel("Value", fontsize=20)
+    ax.set_title(f"{latex_symbol}", fontsize=20)
+    ax.tick_params(axis='both', labelsize=20)
+    if lam_idx == 2:
+        ax.legend(fontsize=20, loc=1, framealpha=0.5)
+
+# Optional: nicer spacing + global title
+# fig.suptitle(f"Bootstrap PF band plots (quantiles); J={J}; N={N}; "
+#              + f"Δt={delta_t}; l={l}", fontsize=24)
+plt.tight_layout()
+
+if SAVE_PLOTS:
+    folder_path = Path(FOLDER_PATH_STR)
+    folder_path.mkdir(parents=True, exist_ok=True)
+
+    image_name = "all_bandplots_quantiles.png"
+    plt.savefig(folder_path / image_name, bbox_inches='tight')
+    plt.close(fig)
+else:
+    plt.show()
 
 # %%
 
 ## ESS ##
 
+plt.figure(figsize=(8, 3))
 plt.plot(k_series, pf_boot.summaries.ESSs, color="red")
-plt.xlabel("k")
-plt.ylabel("ESS")
-plt.title("ESS over time: Boot PF | "
-          + f"J={J}; N={N}; $\Delta t$={delta_t}; l={l}")
+plt.xlabel("k", fontsize=16)
+plt.ylabel("ESS", fontsize=16)
+plt.tick_params(axis='both', labelsize=16)
+# plt.title("ESS over time: Bootstrap PF\n"
+#           + f"J={J}; N={N}; $\Delta t$={delta_t}; l={l}",
+#           fontsize=20)
 if SAVE_PLOTS:
-    folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
-                       + f"{EXAMPLE_FOLDER_NAME}/GP; J={J}")
+    folder_path = Path(FOLDER_PATH_STR)
     folder_path.mkdir(parents=True, exist_ok=True)
-    image_name = f"ESS_J{J}_GP.png"
+    image_name = "ess.png"
     plt.savefig(folder_path / image_name,
                 bbox_inches='tight')
     plt.close("all")
@@ -310,7 +389,7 @@ k = np.random.randint(K+1)
 
 ## KDE for each lam (uses weights of particles) ##
 
-if not SAVE_PLOTS:
+if not SAVE_PLOTS and PLOT_EXTRAS:
     for lam in true_lams.columns:
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.kdeplot(x=(ds_boot["Exp_X"].sel({'lam': lam, 'k': k})
@@ -331,7 +410,7 @@ if not SAVE_PLOTS:
 
 ## Pairwise scatter plots of particles (not using weights) ##
 
-if not SAVE_PLOTS:
+if not SAVE_PLOTS and PLOT_EXTRAS:
     plot_df = (
         ds_boot["Exp_X"].sel(k=k)
         .to_pandas() # index: particle, columns: lambda
@@ -347,7 +426,7 @@ if not SAVE_PLOTS:
 
 # %%
 
-## Band plots: bad way ##
+## Band plots using summaries.moments (plots log-rates) ##
 
 # means_boot =  np.stack([m['mean'] for m in pf_boot.summaries.moments])
 # vars_boot = np.stack([m['var'] for m in pf_boot.summaries.moments])

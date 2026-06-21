@@ -106,22 +106,8 @@ def kernel_se(t1, t2, l, C=1):
 
 class CTMC_old(augssm.AugmentedStateSpaceModel):
     """ CTMC Augmented SSM
-
-        ----- Parameters -----
-        n: number of states
-        J: number of random walkers
-        a0: Gamma dist alpha parameters for PX0 in (n, n) ndarray
-        b0: Gamma dist beta parameters for PX0 in (n, n) ndarray
-
-        ----- Notes -----
-        - Track lams_list rather than generator A
-        - y defined as in type 4
-        - SSM starts with the RWs spread across the states as evenly as
-          possible.
-        - y: ndarray of shape (J, )
-        - lams: ndarray of shape (n*(n-1), )
         
-        BUGGED, don't use this.
+        BUGGED, don't use.
     """
 
     def PX0(self):
