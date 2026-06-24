@@ -5,10 +5,10 @@
 
 ## Required since ctmc_boot is not in root folder ##
 
-import sys
-from pathlib import Path
+# import sys
+# from pathlib import Path
 
-sys.path.append(str(Path.cwd().parents[0]))
+# sys.path.append(str(Path.cwd().parents[0]))
 
 
 ## CONSTANTS ##

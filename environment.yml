@@ -1,0 +1,21 @@
+name: ctmc-particle-filtering
+
+channels:
+  - defaults
+
+dependencies:
+  - python=3.13
+  - seaborn
+  - xarray
+  - scipy
+  - pandas
+  - matplotlib
+  - numpy
+  - scikit-learn
+  - joblib
+  - numba
+  - statsmodels
+  - pip
+
+  - pip:
+      - git+https://github.com/JayBrydon2015/particles.git

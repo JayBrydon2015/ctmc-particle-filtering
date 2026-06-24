@@ -60,12 +60,14 @@ def lams_to_gen(lams):
 
 def lams_idx_to_gen_pos(idx, n):
     """ Returns the p, q position of the lambda given its index
-        in the lams array and the number of CMTC states n. """
+        in the lams array and the number of CMTC states n.
+        1 is added to i & j to go from 0-based to 1-based indexing.
+    """
     i = idx // (n-1)
     j = idx %  (n-1)
     if i <= j:
         j += 1
-    return i, j
+    return i + 1, j + 1
 
 def compute_transition_prob_matrix(lams, n, delta_t):
     ## Option 1: worse ##
