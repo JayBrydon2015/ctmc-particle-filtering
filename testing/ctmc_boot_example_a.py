@@ -1,33 +1,30 @@
 # -*- coding: utf-8 -*-
 
-""" Bootstrap PF for inferring rates of the CTMC in Example A. """
+"""
 
-## Required since ctmc_boot is not in root folder ##
-import sys
-from pathlib import Path
+Bootstrap PF for inferring rates of the CTMC in Example A.
 
-sys.path.append(str(Path.cwd().parents[0]))
+"""
 
 
-## CONSTANTS ##
+###### CONSTANTS ######
 
 PLOT_ROOT_FOLDER_NAME = "generated_plots"
 EXAMPLE_FOLDER_NAME   = "CTMC_ExampleA_Figs"
 
-SAVE_PLOTS  = True # Save plots to a folder (True) or show them (False)
+SAVE_PLOTS  = False # Save plots to a folder (True) or show them (False)
 PLOT_EXTRAS = False # Plot extra stuff (True rates, KDEs and PW scatter plots)
 
-SIMULATE_DATA_MANUALLY = True # For when J==1, simulate data manually
+SIMULATE_DATA_MANUALLY = True # Simulate data manually (when J == 1 & K == 300)
 
-NONZERO_RATE_POSITIONS = {
-    (1, 2),
-    (2, 3),
-    (3, 1)
-}
+###### IMPORTS ######
 
-## IMPORTS ##
+import pathlib
 
 import numpy as np
+import pandas as pd
+import xarray as xr
+
 if SAVE_PLOTS:
     import matplotlib
     matplotlib.use('Agg') # Must be called before importing pyplot
@@ -35,8 +32,6 @@ if SAVE_PLOTS:
 else:
     import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
-import xarray as xr
 
 from ctmc_modules.ctmc_ssms import (
     get_gamma_params_from_mean_var,
@@ -58,7 +53,8 @@ from rates_simulation.true_rates_simulation_funtions import (
 )
 
 
-## FUNCTIONS ##
+###### FUNCTIONS ######
+
 
 def get_latex_rate_symbol(p, q):
     """ Returns the correct symbol for the corresponding (p, q).
@@ -66,6 +62,7 @@ def get_latex_rate_symbol(p, q):
         Also returns the name of the rate used in the image file
         name.
     """
+    
     if p == 1 and q == 2:
         return "$\\varepsilon$", "Eps"
     elif p == 2 and q == 3:
@@ -75,12 +72,17 @@ def get_latex_rate_symbol(p, q):
     else:
         return f"$\\lambda^{{{p} \\to {q}}}$", f"L{p}{q}"
 
+
 def weighted_quantile(values, weights, quantiles):
     """
-    values: (particle,)
-    weights: (particle,)
+    Calculates given quantiles using values and weights.
+    
+    -- Inputs --
+    values: (N,)
+    weights: (N,)
     quantiles: array-like in [0,1]
     """
+    
     sorter = np.argsort(values)
     values = values[sorter]
     weights = weights[sorter]
@@ -90,33 +92,36 @@ def weighted_quantile(values, weights, quantiles):
 
     return np.interp(quantiles, cdf, values)
 
+
 # %%
 
-## CTMC SSM Parameters ##
+###### CTMC SSM Parameters ######
 
-n = 3 # Number of states in the CTMC
+n = 3          # Number of states in the CTMC
 delta_t = 0.01 # Time between observations
 
 mu0  = np.array([1, 1, 1, 1, 5, 1]) # For P(lams_0), a vague prior
 var0 = np.array([4, 4, 4, 4, 6, 4]) # For P(lams_0), a vague prior
 a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
 
-px_var_flag = False # For the transition dist. to use
-C = 1 # Transition variance parameter
+px_var_flag = False # Transition distribution: False -> Opt.1, True -> Opt. 2
+C = 1               # Transition variance parameter
 
-J = 1 # Number of random walkers
-y_init = np.array([0 for _ in range(J)]) # RWs initial configuration
+J = 8 # Number of random walkers (RWs)
 
-## Particle filtering, simulation and other parameters ##
+y_init = np.array([0 for _ in range(J)]) # RWs initial configuration: y_{-1}
 
-N = 30000 # Number of particles in the PF
 
-K = 300 # k = 0, ..., K
-k_series = np.arange(K + 1) # [0, 1, ..., K]
+###### Particle filtering, simulation and other parameters ######
+
+N = 30000 # Number of particles in the particle filter
+
+K = 300                          # k = 0, ..., K
+k_series = np.arange(K + 1)      # [0, 1, ..., K]
 time_points = delta_t * k_series # [t_0, t_1, ..., t_K], given t_0 = 0
 
 
-## Strings for directories for saving the plots ##
+###### Directories for saving the plots ######
 
 op_num = get_option_num_for_transition_dist(px_var_flag)
 FOLDER_PATH_STR = (PLOT_ROOT_FOLDER_NAME + "/"
@@ -124,18 +129,28 @@ FOLDER_PATH_STR = (PLOT_ROOT_FOLDER_NAME + "/"
                    + f"J={J}; Dt={delta_t}")
 
 
-## Create the SSM object ##
+###### Create the SSM object ######
 
-ctmc_ssm = CTMC(n=n, J=J, delta_t=delta_t, C=C, a0=a0, b0=b0, y_init=y_init,
-                px_var_flag=px_var_flag, px_verbose=True)
+ctmc_ssm = CTMC(
+    n = n,
+    J = J,
+    delta_t = delta_t,
+    C = C,
+    a0 = a0,
+    b0 = b0,
+    y_init = y_init,
+    px_var_flag = px_var_flag,
+    px_verbose = True
+)
 
 # %%
 
-## Simulate the true rates (true_states) and the state vectors (data) ##
+###### Simulate true rates (true_states) and state vectors (data) ######
 
 true_states = simulate_example_a(K=K)
 
 if SIMULATE_DATA_MANUALLY and J == 1 and K == 300:
+    
     data = []
     
     for _ in range(0, 76):
@@ -156,11 +171,17 @@ if SIMULATE_DATA_MANUALLY and J == 1 and K == 300:
     assert len(data) == K + 1
     
 else:
-    data = simulate_data(true_rates=true_states, n=n, J=J, delta_t=delta_t,
-                         y_init=y_init)
+    
+    data = simulate_data(
+        true_rates=true_states,
+        n=n,
+        J=J,
+        delta_t=delta_t,
+        y_init=y_init
+    )
 
 
-## Store true rates in Pandas dataframe ##
+###### Store true rates in Pandas dataframe ######
 
 lams_gen_positions = [lams_idx_to_gen_pos(i, n)
                       for i in range(true_states[0].shape[1])]
@@ -172,7 +193,7 @@ true_lams = pd.DataFrame(
 ).rename_axis('k')
 
 
-## Plot true rates ##
+###### Plot true rates ######
 
 if PLOT_EXTRAS:
     for col in true_lams.columns:
@@ -188,9 +209,10 @@ if PLOT_EXTRAS:
 
 # %%
 
-## Show the data plot on its own ##
+###### Show the data plot on its own ######
 
 if J <= 10:
+    
     data_plot = np.vstack(data)
     
     fig, axes = plt.subplots(
@@ -201,7 +223,7 @@ if J <= 10:
     )
     fig.suptitle("RW states over time", fontsize=14)
     
-    # Ensure axes is always iterable (important if J == 1)
+    # Ensure axes is always iterable
     if J == 1:
         axes = [axes]
     
@@ -216,12 +238,14 @@ if J <= 10:
     plt.show()
     
     plt.close("all")
+    
 else:
+    
     print(f"Too many random walkers to plot: {J} RWs.")
 
 # %%
 
-## Run the bootstrap PF ##
+###### Run the bootstrap particle filter ######
 
 fk_boot = augssm.AugmentedBootstrap(ssm=ctmc_ssm, data=data)
 pf_boot = particles.SMC(fk=fk_boot, N=N, resampling='stratified', 
@@ -230,9 +254,11 @@ print("Beginning the bootstrap particle filter.")
 pf_boot.run()
 print("Bootstrap particle filter finished.")
 
-## Store lambda particles and weights in an xarray.Dataset ##
+
+###### Store lambda particles and weights in an xarray.Dataset ######
 
 ds_boot = xr.Dataset({
+    
     'X': xr.DataArray(
         np.stack([pf_boot.hist.X[k] for k in k_series]),
         dims=("k", "particle", "lam"),
@@ -242,6 +268,7 @@ ds_boot = xr.Dataset({
         },
         name="Bootstrap PF Particles"
     ),
+    
     'W': xr.DataArray(
         np.stack([pf_boot.hist.wgts[k].W for k in k_series]),
         dims=("k", "weight"),
@@ -253,7 +280,7 @@ ds_boot = xr.Dataset({
 })
 
 
-## Calculate quantiles and add into ds_boot ##
+###### Calculate quantiles and add into ds_boot ######
 
 qs = np.array([0.05, 0.5, 0.95]) # 95% interval & median
 
@@ -271,18 +298,18 @@ ds_boot["X_quantiles"] = xr.apply_ufunc(
 
 # %%
 
-## DATA, ESS, & BAND PLOTS ##
+###### DATA, ESS, & BAND PLOTS ######
 
 if J == 1: # Stack all of them vertically
     
-    # FONT SIZE CONSTANTS #
+    ## FONT SIZE CONSTANTS ##
     
     TITLE_FONTSIZE = 20
     LABEL_FONTSIZE = 20
     TICK_FONTSIZE = 20
     LEGEND_FONTSIZE = 20
 
-    # Initialise subplots #
+    ## Initialise subplots ##
 
     fig, axes = plt.subplots(
         6,
@@ -298,7 +325,7 @@ if J == 1: # Stack all of them vertically
     ess_ax = axes[1]
     band_axes = axes[2:]
     
-    # Data plot #
+    ## Data plot ##
     
     data_plot = np.vstack(data) + 1
 
@@ -309,7 +336,7 @@ if J == 1: # Stack all of them vertically
     rw_ax.tick_params(axis='both', labelsize=TICK_FONTSIZE)
     rw_ax.grid(True)
     
-    # ESS plot #
+    ## ESS plot ##
     
     ess_ax.plot(
         k_series,
@@ -328,7 +355,7 @@ if J == 1: # Stack all of them vertically
     ess_ax.yaxis.get_offset_text().set_fontsize(LABEL_FONTSIZE)
     ess_ax.grid(True)
     
-    # Band plots #
+    ## Band plots ##
     
     band_ax_idx = 0
     
@@ -340,9 +367,6 @@ if J == 1: # Stack all of them vertically
         ax = band_axes[band_ax_idx]
     
         p, q = lams_idx_to_gen_pos(lam_idx, n)
-        
-        # if (p, q) not in NONZERO_RATE_POSITIONS and (p, q) != (2, 1):
-        #     continue
         
         latex_symbol, rate_name_img = get_latex_rate_symbol(p, q)
     
@@ -408,7 +432,7 @@ if J == 1: # Stack all of them vertically
         
         band_ax_idx += 1
         
-    # Formatting options #
+    ## Formatting options ##
         
     axes[-1].set_xlabel(
         "k",
@@ -438,7 +462,7 @@ if J == 1: # Stack all of them vertically
 
 else: # Plot them separately
     
-    # DATA PLOT #
+    ## DATA PLOT ##
     
     data_plot_fontsize = 23
     data_plot_fontsize2 = 20
@@ -508,7 +532,7 @@ else: # Plot them separately
     else:
         print(f"Too many random walkers to plot: {J} RWs.")
     
-    # ESS PLOT #
+    ## ESS PLOT ##
     
     ess_font_size = 20
 
@@ -530,7 +554,7 @@ else: # Plot them separately
     else:
         plt.show()
     
-    # BAND PLOTS #
+    ## BAND PLOTS ##
     
     BP_MIN_YLIMS = [-0.1, -0.1, -0.1, -0.1, 0.5, -0.1]
     BP_MAX_YLIMS = [2, 2, 2, 2, 7, 2]
@@ -627,6 +651,7 @@ if PLOT_EXTRAS:
 
 # %%
 
+###### Old plotting code ######
 
 ## Plot data (if J not too large) ##
 
