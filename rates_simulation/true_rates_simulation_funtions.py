@@ -11,6 +11,7 @@ from particles import distributions as dists
 
 ## SIGMOID GROWTH RATES ##
 
+
 def sigmoid(x, a, b, m, s):
     """ result = a when t = 0. """
     result = a + (b-a) / (1 + np.exp(-s*(x-m)))
@@ -32,12 +33,14 @@ def simulate_sigmoid_growth(*, mu0, max_growth, K, sig_func_val=14):
 
 ## CONSTANT RATES ##
 
+
 def simulate_constant_rates(*, mu0, K):
     """ Simulate true_states and data where rates remain constant. """
     return [ mu0.reshape(1, -1) for _ in range(K+1) ]
 
 
 ## SINE RATES ##
+
 
 def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
     """ Simulate true_rates that follow a sine squared wave.
@@ -72,6 +75,7 @@ def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
 
 ## EXAMPLE A: 3 CONT RATES & 3 STATES ##
 
+
 def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
     """ Simulate rates according to Example A (in thesis). """
     lams_k = np.array([epsilon, 0, 0, delta, phi, 0]).reshape(1, -1)
@@ -79,6 +83,7 @@ def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
 
 
 ## DATA SIMULATION GIVEN TRUE RATES ##
+
 
 def simulate_data(*, true_rates, n, J, delta_t, y_init):
     """ Simulate the data using the true rates. """
@@ -98,6 +103,29 @@ def simulate_data(*, true_rates, n, J, delta_t, y_init):
         y_k = np.array([dists.Categorical(P_mat[yp_i]).rvs()[0]
                         for yp_i in y_k])
         data.append(y_k.reshape(1, -1))
+    
+    return data
+
+
+def simulate_data_manually_example_a():
+    """ Simulate data manually for example A, specifically when J == 1
+        and K == 300.
+    """
+    
+    data = []
+    
+    for _ in range(0, 76):
+        data.append(np.array([[0]]))
+    for _ in range(76, 140):
+        data.append(np.array([[1]]))
+    for _ in range(140, 176):
+        data.append(np.array([[2]]))
+    for _ in range(176, 240):
+        data.append(np.array([[0]]))
+    for _ in range(240, 301):
+        data.append(np.array([[1]]))
+    
+    assert len(data) == 300 + 1 # K + 1
     
     return data
 

@@ -4,26 +4,16 @@
 
 """ CTMC SSMs as Python objects (classes). """
 
-## Imports ##
+## IMPORTS ##
 
 import numpy as np
-from scipy.linalg import expm # For computing the matrix exp: e^A
+from scipy.linalg import expm # For computing the matrix exponential of A: e^A
 
-# Particles package
 from particles import augmented_state_space_models as augssm
 from particles import distributions as dists
 
 
-## Functions ##
-
-def get_option_num_for_transition_dist(px_var_flag):
-    """ Get the option number based on the transition distribution used.
-        Mainly used for saving the plots with the correct names, etc.
-        Only currently for whether px_var_flag is True or False.
-    """
-    if px_var_flag:
-        return 2
-    return 1
+## FUNCTIONS ##
 
 def get_gamma_params_from_mean_var(mean, var):
     """ Compute the Gamma distribution parameters, alpha
@@ -32,7 +22,7 @@ def get_gamma_params_from_mean_var(mean, var):
     return mean ** 2 / var, mean / var
 
 # lams are assumed to be a list of rates ordered by
-# 11, 12, 13, ..., 1n, 21, 23, ..., 2n, ..., (n-1)n
+# 12, 13, ..., 1n, 21, 23, ..., 2n, ..., (n-1)n
 def gen_to_lams(gen):
     """ Convert generator A to lams.
         Essentially flattens and removes the diagonal elements.
@@ -103,7 +93,8 @@ def kernel_se(t1, t2, l, C=1):
     """ Squared exponential kernel. """
     return C * np.exp( - (t1 - t2) ** 2 / (2 * l ** 2) )
 
-## CTMC SSM Classes ##
+
+## CTMC SSM CLASSES ##
 
 
 class CTMC_old(augssm.AugmentedStateSpaceModel):
@@ -163,36 +154,39 @@ class CTMC_old(augssm.AugmentedStateSpaceModel):
 
 
 class CTMC(augssm.AugmentedStateSpaceModel):
-    """ CTMC Augmented SSM
+    r"""
+        CTMC Augmented SSM
 
         ----- Parameters -----
-        n: number of states
-        J: number of random walkers
-        delta_t: real time between observations
-        C: to scale the transition variance by
-        a0: Gamma dist alpha parameters for PX0 in (n, n) ndarray
-        b0: Gamma dist beta parameters for PX0 in (n, n) ndarray
+        n: number of states.
+        J: number of random walkers.
+        delta_t: real time between observations.
+        C: to scale the transition variance by.
+        a0: Gamma dist alpha parameters for PX0 in (n, n) ndarray.
+        b0: Gamma dist beta parameters for PX0 in (n, n) ndarray.
         y_init: initial configuration of RWs (set to None or don't pass 
-          into initialisation if using the default)
-        px_var_flag: decides which transition variance to use (see PX). If
-          False (the default), the variance of \lambda_{k+1} | \lambda_{k} is
-          \lambda_{k} * DELTA_T * C; if True, it is DELTA_T * C.
-        reg_term: a small constant added to beta in Option 2 in PX to help
+          into initialisation if using the default).
+        TD: decides which transition distribution to use (see PX). If
+          False (the default), the proportional variance (PV) option; if True,
+          the constant variance (CV) option.
+        px_reg_term: a small constant added to beta in Option 2 in PX to help
           numberical stability.
-         px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
+        px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
 
         ----- Notes -----
-        - Track lams_list rather than generator A
-        - y defined as in type 4
+        - Track the list of rates rather than generator A.
+        - lams: ndarray of shape (n*(n-1), ). All rates in a 1D array, ordered
+          as 12, ..., 1n, 21, 23, ..., 2n, ..., n(n-2), n(n-1).
+        - y defined as in type 4.
+        - y_init: ndarray of shape (J, ).
         - SSM starts with the RWs spread across the states as evenly as
-          possible by default (y_init == None)
-        - y (data[k]): ndarray of shape (1, J), by convention
-        - lams: ndarray of shape (n*(n-1), )
-        - y_init: ndarray of shape (J, )
+          possible by default (y_init == None).
+        - y_k (data[k]): ndarray of shape (1, J), by convention.
+        
     """
     
     def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None,
-                 px_var_flag=False, reg_term=1e-6, px_verbose=False):
+                 TD=False, reg_term=1e-6, px_verbose=False):
         self.n = n
         self.J = J
         self.delta_t = delta_t
@@ -207,7 +201,7 @@ class CTMC(augssm.AugmentedStateSpaceModel):
                                             for i in range(self.J)]))
         else:
             self.y_init = y_init
-        self.px_var_flag = px_var_flag
+        self.TD = TD
         self.reg_term = reg_term
         self.px_verbose = px_verbose
 
@@ -219,14 +213,14 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         if self.px_verbose and t % 20 == 0:
             print("t:", t)
         Dt_times_C = self.delta_t * self.C
-        if not self.px_var_flag:
-            ## Option 1 (default): Var = lambda * DELTA_T * C ##
+        if not self.TD:
+            ## PV (default): Var = lambda * DELTA_T * C ##
             alpha = xp / Dt_times_C
             beta_i = np.repeat(1 / Dt_times_C, alpha.shape[0])
             lams_dists = [dists.Gamma(alpha[:, l], beta_i)
                           for l in range(alpha.shape[1])]
         else:
-            ## Option 2: Var = DELTA_T * C ##
+            ## CV: Var = DELTA_T * C ##
             alpha = xp ** 2 / Dt_times_C
             beta  = xp / Dt_times_C + self.reg_term
             lams_dists = [dists.Gamma(alpha[:,l], beta[:, l])
@@ -265,6 +259,9 @@ class CTMC_prop(CTMC):
         
         kappa: the balance between using the bootstrap filtering parameters
         and the usual parameters in self.PX & self.PX0.
+        
+        ! NOT USED !
+        
     """
     
     def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None,
@@ -331,57 +328,59 @@ class CTMC_prop(CTMC):
 
 
 class GP_CTMC(augssm.AugmentedStateSpaceModel):
-    """ CTMC Augmented SSM with the log-rates modelled via
+    r"""
+        CTMC Augmented SSM with the log-rates modelled via
         a Gaussian process.
 
         ----- Parameters -----
-        n: number of states
-        J: number of random walkers
-        delta_t: real time between observations
-        l: scaling parameter in Kernal function
+        n: number of states.
+        J: number of random walkers.
+        delta_t: real time between observations.
+        l: parameter in the squared exponential kernal function.
         mu0: the means of the rates (not logged) for PX0. Of shape
           (n*(n-1), ) or (n, n).
-        var0: the vars of the log-rates for PX0. Of shape (n*(n-1), )
-          or (n, n).
+        scale0: the standard deviations of the log-rates for PX0, of shape
+          (n*(n-1), ) or (n, n).
         y_init: initial configuration of RWs (set to None or don't pass 
-          into initialisation if using the default)
-        px_var_flag: decides which transition variance to use (see PX). If
-          False (the default), the variance of \lambda_{k+1} | \lambda_{k} is
-          \lambda_{k} * DELTA_T * C; if True, it is DELTA_T * C.
-        reg_term: a small constant added to beta in Option 2 in PX to help
-          numberical stability.
+          into initialisation if using the default).
          px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
 
         ----- Notes -----
-        - Track lams_list rather than generator A
-        - lams are now actually the logged rates
-        - y defined as in type 4
+        - Track the list of rates rather than generator A.
+        - lams: ndarray of shape (n*(n-1), ). All rates in a 1D array, ordered
+          as 12, ..., 1n, 21, 23, ..., 2n, ..., n(n-2), n(n-1).
+        - lams are now actually the log-rates.
+        - y defined as in type 4.
+        - y_init: ndarray of shape (J, ).
         - SSM starts with the RWs spread across the states as evenly as
-          possible by default (y_init == None)
-        - y (data[k]): ndarray of shape (1, J), by convention
-        - lams: ndarray of shape (n*(n-1), )
-        - y_init: ndarray of shape (J, )
-        - the mean function m(t) is just constant and is mu0.
+          possible by default (y_init == None).
+        - y_k (data[k]): ndarray of shape (1, J), by convention.
+        - the mean function m(t) is constant and is ln(mu0).
     """
     
     def __init__(self, *, n, J, delta_t, l, mu0, scale0, y_init=None,
                  px_verbose=False):
+        
         self.n = n
         self.J = J
         self.delta_t = delta_t
         self.l = l
         self.mu0 = mu0
         self.scale0 = scale0
+        
         if len(self.mu0.shape) > 1: # Currently a (n, n) ndarray
             self.mu0 = gen_to_lams(self.mu0)
         self.lmu0 = np.log(self.mu0)
+        
         if len(self.scale0.shape) > 1: # Currently a (n, n) ndarray
             self.scale0 = gen_to_lams(self.scale0)
+        
         if y_init is None:
             self.y_init = np.sort(np.array([i % self.n
                                             for i in range(self.J)]))
         else:
             self.y_init = y_init
+        
         self.px_verbose = px_verbose
         
         # Compute variance and covariance values
@@ -389,11 +388,13 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
         self.var = kernel_se(0, 0, l, C=1)
         self.px_scale = np.sqrt(self.var - self.cov ** 2 / self.var)
 
+
     def PX0(self):
         lams_dists = [dists.Normal(mean, scale)
                       for mean, scale in zip(self.lmu0, self.scale0)]
         return dists.IndepProd(*lams_dists)
-    
+
+
     def PX(self, t, xp):
         if self.px_verbose and t % 20 == 0:
             print("t:", t)
@@ -405,9 +406,11 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
         ]
         
         return dists.IndepProd(*lams_dists)
-    
+
+
     def get_cat_dist(self, P_mat, y_i):
         return dists.Categorical(P_mat[:, y_i])
+
 
     def PY(self, t, xp, x, datap=None):
         ## y ##
@@ -425,3 +428,5 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
                           for cur_lams in exp_x], axis=0)
         y_dists = [self.get_cat_dist(P_mat, y_i) for y_i in datap]
         return dists.IndepProd(*y_dists)
+
+

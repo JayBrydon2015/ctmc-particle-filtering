@@ -2,7 +2,7 @@
 
 """
 
-Bootstrap PF for inferring rates of the GP CTMC in Example A.
+Bootstrap PF for inferring rates of the CTMC in Example A.
 
 """
 
@@ -11,14 +11,17 @@ Bootstrap PF for inferring rates of the GP CTMC in Example A.
 
 SIMULATE_DATA_MANUALLY = True # Simulate data manually (when J == 1 & K == 300)
 
-EXAMPLE_FOLDER_NAME   = "GP_CTMC_ExampleA_Figs"
+EXAMPLE_FOLDER_NAME   = "CTMC_ExampleA_Figs"
 
 
-## IMPORTS ##
+###### IMPORTS ######
 
 import numpy as np
 
-from ctmc_modules.ctmc_ssms import GP_CTMC
+from ctmc_modules.ctmc_ssms import (
+    get_gamma_params_from_mean_var,
+    CTMC,
+)
 
 from rates_simulation.true_rates_simulation_funtions import (
     simulate_example_a, simulate_data, simulate_data_manually_example_a
@@ -30,21 +33,22 @@ from run_results_generation import (
 
 # %%
 
-#### CTMC SSM & Other Parameters ####
+#### CTMC SSM & Other Parameters #####
 
-n = 3 # Number of states in CTMC
+n = 3 # Number of states in the CTMC
 
-mu0    = np.array([1, 1, 1, 1, 5, 1]) # For P(llams0), a vague prior
-scale0 = np.array([1, 1, 1, 1, 2, 1]) # For P(llams0), a vague prior
+mu0  = np.array([1, 1, 1, 1, 5, 1]) # For P(lams_0), a vague prior
+var0 = np.array([4, 4, 4, 4, 6, 4]) # For P(lams_0), a vague prior
 
 K = 300 # k = 0, ..., K
 
-num_runs = 8
+num_runs = 9
 runs_table_dictionary = {
     "N": [50000] * num_runs,
-    "delta_t": [0.01, 0.01, 0.01, 0.01, 0.01, 0.005, 0.01, 0.005],
-    "J": [1, 8, 1000, 10000, 1000, 1000, 1000, 1000],
-    "l": [1, 1, 1, 1, 0.8, 0.8, 1.2, 1.2]
+    "delta_t": [0.01, 0.01, 0.01, 0.01, 0.01, 0.005, 0.005, 0.005, 0.005],
+    "J": [1, 8, 1000, 10000, 1000, 1000, 1000, 1000, 1000],
+    "TD": [False, False, False, False, True, False, False, True, True],
+    "C": [1, 1, 1, 1, 1, 0.5, 2, 0.5, 2],
 }
 assert all(len(row) == num_runs for row in runs_table_dictionary.values())
 
@@ -58,22 +62,26 @@ for i in range(num_runs): # Run A, B, C, etc.
     N = runs_table_dictionary["N"][i]
     delta_t = runs_table_dictionary["delta_t"][i]
     J = runs_table_dictionary["J"][i]
-    l = runs_table_dictionary["l"][i]
+    TD = runs_table_dictionary["TD"][i]
+    C = runs_table_dictionary["C"][i]
     
     y_init = np.array([0 for _ in range(J)]) # RWs initial config y_{-1}
+    
+    a0, b0 = get_gamma_params_from_mean_var(mu0, var0)
     
     
     ## Create the SSM object ##
     
-    ctmc_ssm = GP_CTMC(
-        n=n,
-        J=J,
-        delta_t=delta_t,
-        l=l,
-        mu0=mu0,
-        scale0=scale0,
-        y_init=y_init,
-        px_verbose=True
+    ctmc_ssm = CTMC(
+        n = n,
+        J = J,
+        delta_t = delta_t,
+        C = C,
+        a0 = a0,
+        b0 = b0,
+        y_init = y_init,
+        TD = TD,
+        px_verbose = True
     )
     
     
