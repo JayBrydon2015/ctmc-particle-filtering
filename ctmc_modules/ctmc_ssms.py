@@ -89,9 +89,9 @@ def compute_weighted_mean_var(x, lw):
     var = (W[:, None] * (x - mean)**2).sum(axis=0)
     return mean, var
 
-def kernel_se(t1, t2, l, C=1):
+def kernel_se(t1, t2, l):
     """ Squared exponential kernel. """
-    return C * np.exp( - (t1 - t2) ** 2 / (2 * l ** 2) )
+    return np.exp( - (t1 - t2) ** 2 / (2 * l ** 2) )
 
 
 ## CTMC SSM CLASSES ##
@@ -166,9 +166,9 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         b0: Gamma dist beta parameters for PX0 in (n, n) ndarray.
         y_init: initial configuration of RWs (set to None or don't pass 
           into initialisation if using the default).
-        TD: decides which transition distribution to use (see PX). If
-          False (the default), the proportional variance (PV) option; if True,
-          the constant variance (CV) option.
+        TV: decides which transition variance to use (see PX). If
+          False (the default), proportional variance (PV); if True,
+          constant variance (CV).
         px_reg_term: a small constant added to beta in Option 2 in PX to help
           numberical stability.
         px_verbose: if True and if t % 20 == 0, prints the value of t in PX.
@@ -186,7 +186,7 @@ class CTMC(augssm.AugmentedStateSpaceModel):
     """
     
     def __init__(self, *, n, J, delta_t, C, a0, b0, y_init=None,
-                 TD=False, reg_term=1e-6, px_verbose=False):
+                 TV=False, reg_term=1e-6, px_verbose=False):
         self.n = n
         self.J = J
         self.delta_t = delta_t
@@ -201,7 +201,7 @@ class CTMC(augssm.AugmentedStateSpaceModel):
                                             for i in range(self.J)]))
         else:
             self.y_init = y_init
-        self.TD = TD
+        self.TV = TV
         self.reg_term = reg_term
         self.px_verbose = px_verbose
 
@@ -213,7 +213,7 @@ class CTMC(augssm.AugmentedStateSpaceModel):
         if self.px_verbose and t % 20 == 0:
             print("t:", t)
         Dt_times_C = self.delta_t * self.C
-        if not self.TD:
+        if not self.TV:
             ## PV (default): Var = lambda * DELTA_T * C ##
             alpha = xp / Dt_times_C
             beta_i = np.repeat(1 / Dt_times_C, alpha.shape[0])
@@ -337,6 +337,7 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
         J: number of random walkers.
         delta_t: real time between observations.
         l: parameter in the squared exponential kernal function.
+        C: transition variance multiplier.
         mu0: the means of the rates (not logged) for PX0. Of shape
           (n*(n-1), ) or (n, n).
         scale0: the standard deviations of the log-rates for PX0, of shape
@@ -358,13 +359,14 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
         - the mean function m(t) is constant and is ln(mu0).
     """
     
-    def __init__(self, *, n, J, delta_t, l, mu0, scale0, y_init=None,
+    def __init__(self, *, n, J, delta_t, l, C, mu0, scale0, y_init=None,
                  px_verbose=False):
         
         self.n = n
         self.J = J
         self.delta_t = delta_t
         self.l = l
+        self.C = C
         self.mu0 = mu0
         self.scale0 = scale0
         
@@ -384,9 +386,11 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
         self.px_verbose = px_verbose
         
         # Compute variance and covariance values
-        self.cov = kernel_se(0, self.delta_t, l, C=1)
-        self.var = kernel_se(0, 0, l, C=1)
-        self.px_scale = np.sqrt(self.var - self.cov ** 2 / self.var)
+        self.cov = kernel_se(0, self.delta_t, l)
+        self.var = kernel_se(0, 0, l)
+        self.px_scale = (
+            np.sqrt(self.C) * np.sqrt(self.var - self.cov ** 2 / self.var)
+        )
 
 
     def PX0(self):
