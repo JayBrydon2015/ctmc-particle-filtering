@@ -404,8 +404,11 @@ class GP_CTMC(augssm.AugmentedStateSpaceModel):
             print("t:", t)
         
         lams_dists = [
-            dists.Normal( (self.lmu0[i] - self.cov * (self.lmu0[i] - xp[:, i])
-                           / self.var), self.px_scale )
+            dists.Normal(
+                (self.lmu0[i] - self.cov * (self.lmu0[i] - xp[:, i])
+                 / self.var),
+                self.px_scale
+            )
             for i in range(xp.shape[1])
         ]
         

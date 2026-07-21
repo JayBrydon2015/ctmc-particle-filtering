@@ -39,7 +39,16 @@ def simulate_constant_rates(*, mu0, K):
     return [ mu0.reshape(1, -1) for _ in range(K+1) ]
 
 
-## SINE RATES ##
+## EXAMPLE A: 3 CONT RATES & 3 STATES ##
+
+
+def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
+    """ Simulate rates according to Example A (in thesis). """
+    lams_k = np.array([epsilon, 0, 0, delta, phi, 0]).reshape(1, -1)
+    return [ lams_k for _ in range(K+1) ]
+
+
+## EXAMPLE B: SINUSOIDAL RATES ##
 
 
 def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
@@ -57,11 +66,11 @@ def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
     """
     
     if phi is None:
-        phi = np.array([0, np.pi / 2])
+        phi = np.array([np.pi / 4, np.pi / 2])
     if a is None:
-        a = np.array([0, 1])
+        a = np.array([0.5, 1])
     if b is None:
-        b = np.array([3, 4])
+        b = np.array([3.5, 4])
     if s is None:
         s = np.array([1, 1])
     
@@ -71,15 +80,6 @@ def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
             , 0).reshape(1, -1)
         for k in range(K+1)
     ]
-
-
-## EXAMPLE A: 3 CONT RATES & 3 STATES ##
-
-
-def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
-    """ Simulate rates according to Example A (in thesis). """
-    lams_k = np.array([epsilon, 0, 0, delta, phi, 0]).reshape(1, -1)
-    return [ lams_k for _ in range(K+1) ]
 
 
 ## DATA SIMULATION GIVEN TRUE RATES ##
