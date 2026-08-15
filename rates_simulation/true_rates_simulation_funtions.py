@@ -1,34 +1,13 @@
-"""
-Functions to simulate true rates over time.
-
-"""
+""" Functions to simulate true rates over time. """
 
 
 import numpy as np
-from ctmc_modules.ctmc_ssms import compute_transition_prob_matrix
+from scipy.special import expit
+from ctmc_modules.ctmc_ssms import (
+    compute_transition_prob_matrix,
+    gen_pos_to_lams_idx
+)
 from particles import distributions as dists
-
-
-## SIGMOID GROWTH RATES ##
-
-
-def sigmoid(x, a, b, m, s):
-    """ result = a when t = 0. """
-    result = a + (b-a) / (1 + np.exp(-s*(x-m)))
-    result -= a + (b-a) / (1 + np.exp(s * m))
-    result += a
-    return result
-
-
-def simulate_sigmoid_growth(*, mu0, max_growth, K, sig_func_val=14):
-    """ Simulate true_states and data where rates undergo Sigmoid growth. """
-    L = mu0.shape[0]
-    return [
-        np.array([sigmoid(k, mu0[i], mu0[i] + max_growth[i],
-                          K/2, sig_func_val / K)
-                  for i in range(L)]).reshape(1, -1)
-        for k in range(K+1)
-    ]
 
 
 ## CONSTANT RATES ##
@@ -39,7 +18,31 @@ def simulate_constant_rates(*, mu0, K):
     return [ mu0.reshape(1, -1) for _ in range(K+1) ]
 
 
-## EXAMPLE A: 3 CONT RATES & 3 STATES ##
+## SIGMOID EVOLUTION ##
+
+
+def sigmoid(x, a, b, m, s):
+    """ result = a when x = 0. """
+    # expit(u) == 1 / (1 + np.exp(-u))
+    result = a + (b - a) * expit(s * (x - m))
+    result -= a + (b - a) * expit(-s * m)
+    result += a
+    return result
+
+
+def simulate_sigmoid_growth(*, K, mu0=[1, 1], max_growth=[7, 7], s=1):
+    """ Simulate the true transition rates which undergo sigmoid growth. """
+    L = len(mu0)
+    return [
+        np.array([
+            sigmoid(k, mu0[i], mu0[i] + max_growth[i], K/2, s)
+            for i in range(L)
+        ]).reshape(1, -1)
+        for k in range(K+1)
+    ]
+
+
+## CASE STUDY #1: 3 CONT RATES & 3 STATES ##
 
 
 def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
@@ -48,7 +51,7 @@ def simulate_example_a(*, K, epsilon=1, delta=1, phi=4):
     return [ lams_k for _ in range(K+1) ]
 
 
-## EXAMPLE B: SINUSOIDAL RATES ##
+## CASE STUDY #2: SINUSOIDAL RATES ##
 
 
 def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
@@ -82,26 +85,122 @@ def simulate_sine_rates_n2(*, K, phi=None, a=None, b=None, s=None):
     ]
 
 
+## CASE STUDY #3: SUDDENLY JUMPING RATES ##
+
+
+def sudden_jump_function(x, a, b, m):
+    """Piecewise function."""
+    return a if x < m else b
+
+
+def simulate_example_c(*, K, a=[1, 1], b=[20, 20]):
+    """Simulate the two true transition rates which undergo sudden growth."""
+    L = len(a)
+    return [
+        np.array([
+            sudden_jump_function(k, a[i], b[i], K/2)
+            for i in range(L)
+        ]).reshape(1, -1)
+        for k in range(K+1)
+    ]
+
+
+## CASE STUDY #4: HIGH-DIMENSIONAL STATE SPACE ##
+
+
+def sigmoid_cs4(x):
+    return expit(4 * x)
+
+
+def simulate_case_study_4(K: int):
+    """Simulate true rates for Case Study #4 on a high-dimensional CTMC."""
+    
+    n = 5
+    num_lams = n * (n-1)
+    
+    non_zero_transition_rates_positions = [
+        (1, 2), (2, 3), (3, 4), (4, 5), (5, 1)
+    ]
+    
+    true_rates = []
+    
+    for k in range(K + 1):
+        
+        true_rates_k = np.zeros(num_lams)
+        
+        # L_1_2
+        p, q = non_zero_transition_rates_positions[0]
+        lam_idx = gen_pos_to_lams_idx(p, q, n)
+        L_1_2 = 1 + 2 * sigmoid_cs4(- k / K)
+        true_rates_k[lam_idx] = L_1_2
+        
+        # L_2_3
+        p, q = non_zero_transition_rates_positions[1]
+        lam_idx = gen_pos_to_lams_idx(p, q, n)
+        L_2_3 = 0.5 * np.sin(2 * np.pi * k / K) + 2
+        true_rates_k[lam_idx] = L_2_3
+        
+        # L_3_4
+        p, q = non_zero_transition_rates_positions[2]
+        lam_idx = gen_pos_to_lams_idx(p, q, n)
+        L_3_4 = 4 * sigmoid_cs4(k / K)
+        true_rates_k[lam_idx] = L_3_4
+        
+        # L_4_5
+        p, q = non_zero_transition_rates_positions[3]
+        lam_idx = gen_pos_to_lams_idx(p, q, n)
+        L_4_5 = 1 + 2 * sigmoid_cs4(k / K)
+        true_rates_k[lam_idx] = L_4_5
+        
+        # L_5_1
+        p, q = non_zero_transition_rates_positions[4]
+        lam_idx = gen_pos_to_lams_idx(p, q, n)
+        L_5_1 = 2
+        true_rates_k[lam_idx] = L_5_1
+        
+        true_rates.append(true_rates_k.reshape(1, -1))
+    
+    return true_rates
+
+
 ## DATA SIMULATION GIVEN TRUE RATES ##
 
 
 def simulate_data(*, true_rates, n, J, delta_t, y_init):
-    """ Simulate the data using the true rates. """
+    """Simulate the data using the true rates."""
+    
     K = len(true_rates) - 1
     
-    # k == 0
-    P_mat = compute_transition_prob_matrix(true_rates[0].reshape(-1),
-                                           n, delta_t)
-    y_k = np.array([dists.Categorical(P_mat[yp_i]).rvs()[0]
-                    for yp_i in y_init])
+    ## k == 0 ##
+    
+    P_mat = compute_transition_prob_matrix(
+        true_rates[0].reshape(-1),
+        n,
+        delta_t
+    )
+    
+    y_k = np.array([
+        dists.Categorical(P_mat[yp_i]).rvs()[0]
+        for yp_i in y_init
+    ])
+    
     data = [y_k.reshape(1, -1)]
     
-    # 1 <= k <= K
+    ## 1 <= k <= K ##
+    
     for k in range(1, K+1):
-        P_mat = compute_transition_prob_matrix(true_rates[k].reshape(-1),
-                                               n, delta_t)
-        y_k = np.array([dists.Categorical(P_mat[yp_i]).rvs()[0]
-                        for yp_i in y_k])
+        
+        P_mat = compute_transition_prob_matrix(
+            true_rates[k].reshape(-1),
+            n,
+            delta_t
+        )
+        
+        y_k = np.array([
+            dists.Categorical(P_mat[yp_i]).rvs()[0]
+            for yp_i in y_k]
+        )
+        
         data.append(y_k.reshape(1, -1))
     
     return data
