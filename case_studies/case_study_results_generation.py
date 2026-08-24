@@ -2,8 +2,7 @@
 
 """
 
-Functionality that generates the results of a run for any of the CTMC case
-study examples.
+Generation of the results and figures of runs for a case study.
 
 """
 
@@ -13,38 +12,47 @@ study examples.
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import xarray as xr
 
-import particles
-from particles import augmented_state_space_models as augssm
-from particles.collectors import Moments
-
-from ctmc_modules.ctmc_ssms import (
-    lams_idx_to_gen_pos,
-    CTMC,
-    GP_CTMC,
-    get_default_rw_initial_config,
-    get_rw_all_state_p_initial_config
+from ctmc_modules.plotting_config import (
+    PLOTS_ROOT_DIR,
+    TEXTWIDTH_IN,
+    FONT_SIZE,
+    TICK_FONT_SIZE
 )
 
-from rates_simulation.true_rates_simulation_funtions import (
-    simulate_example_a,
+from ctmc_modules.functions import (
+    lams_idx_to_gen_pos,
+    get_default_rw_initial_config,
+    get_rw_all_state_p_initial_config,
+    get_p_q_from_lam_col_name,
+    make_true_rates_dataframe,
+    get_latex_rate_symbol,
+    map_num_to_letter,
+    apply_font_sizes,
+    run_particle_filter
+)
+
+from ctmc_modules.ctmc_ssms import (
+    CTMC,
+    GP_CTMC
+)
+
+from true_rates_data_simulation.true_rates_simulation_functions import (
+    simulate_rates_cs1,
     simulate_sine_rates_n2,
-    simulate_example_c,
-    simulate_case_study_4,
+    simulate_rates_cs3,
+    simulate_rates_cs4
+)
+
+from true_rates_data_simulation.data_simulation_functions import (
     simulate_data,
-    simulate_data_manually_example_a
+    simulate_data_manually_cs1
 )
 
 
 ###### CONSTANTS ######
 
-SAVE_PLOTS  = True  # Save plots to a folder (True) or show them (False)
-PLOT_EXTRAS = False # Plot extra stuff (True rates, KDEs and PW scatter plots)
-
-PLOTS_ROOT_FOLDER_DIR = Path(__file__).parent / "generated_plots"
-PLOTS_ROOT_FOLDER_DIR.mkdir(exist_ok=True)
+SAVE_PLOTS = True # Save plots to a folder (True) or show them (False)
 
 CASE_STUDY_NUMS = [1, 2, 3, 4]
 
@@ -70,24 +78,12 @@ else:
     import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 
-TEXTWIDTH_IN = 6.614
-LATEX_FONT_SIZE = 12
-FONT_SIZE = LATEX_FONT_SIZE - 1
-TICK_FONT_SIZE = FONT_SIZE - 1
-
 ESS_FORMATTER = ScalarFormatter(useMathText=False)
 ESS_FORMATTER.set_scientific(True)
 ESS_FORMATTER.set_powerlimits((4, 4))
 
 
 ###### HELPER FUNCTIONS ######
-
-
-def get_p_q_from_lam_col_name(lam_col: str):
-    """Given L_p_q, returns p and q as integers."""
-    p, q = lam_col.split("_")[1:]
-    return int(p), int(q)
-
 
 def get_latex_rate_symbol_cs1(p, q):
     """ Returns the correct symbol for the corresponding (p, q).
@@ -106,212 +102,7 @@ def get_latex_rate_symbol_cs1(p, q):
         return f"$\\lambda^{{{p} \\to {q}}}$", f"L_{p}_{q}"
 
 
-def get_latex_rate_symbol(p, q):
-    """ Returns the correct symbol for the corresponding (p, q).
-        Returns symbol or expression as a LaTeX math expression.
-        Also returns the name of the rate that could be used in
-        the image file's name, for example.
-    """
-    return f"$\\lambda^{{{p} \\to {q}}}$", f"L_{p}_{q}"
-
-
-def weighted_quantile(values, weights, quantiles):
-    """
-    Calculates weighted quantiles using linear interpolation.
-
-    The weighted empirical cumulative distribution function is constructed
-    from the values and weights, and the requested quantiles are obtained
-    by linearly interpolating its inverse.
-
-    -- Inputs --
-    values: (N,)
-        Values for which to calculate the weighted quantiles.
-    weights: (N,)
-        Corresponding non-negative weights.
-    quantiles: array-like in [0, 1]
-        Quantiles to calculate.
-    """
-    
-    sorter = np.argsort(values)
-    values = values[sorter]
-    weights = weights[sorter]
-
-    cdf = np.cumsum(weights)
-    cdf = cdf / cdf[-1]
-
-    return np.interp(quantiles, cdf, values)
-
-
-def map_num_to_letter(num: int) -> str:
-    """Maps 0 to 'A', 1 to 'B', 2 to 'C', up to 25 to 'Z'."""
-    if 0 <= num <= 25:
-        return chr(65 + num)
-    raise ValueError("Input must be between 0 and 25 inclusive.")
-
-
-def apply_font_sizes(fig, font_size, tick_font_size):
-    for ax in fig.axes:
-        ax.title.set_fontsize(font_size)
-        ax.xaxis.label.set_fontsize(font_size)
-        ax.yaxis.label.set_fontsize(font_size)
-        ax.tick_params(axis="both", labelsize=tick_font_size)
-
-        ax.xaxis.get_offset_text().set_fontsize(tick_font_size)
-        ax.yaxis.get_offset_text().set_fontsize(tick_font_size)
-
-        legend = ax.get_legend()
-        if legend is not None:
-            for text in legend.get_texts():
-                text.set_fontsize(font_size)
-            legend.get_title().set_fontsize(font_size)
-
-
-def make_true_rates_dataframe(*, true_rates, n):
-    """
-    Creates a pandas data frame storing the true transition rates. The columns
-    of the data frame refer to each of the transition rates and each column's
-    name is 'L_p_q', referring to the transition rate from states p to q.
-    
-    Assumes the rates are ordered as L_1_2, L_1_3, ..., L_1_n, L_2_1,
-    L_2_3, ..., L_2_n, ..., L_n_1, L_n_2, ..., L_n_n-1, where L_p_q refers
-    to the transition rate from states p to q. Note that p and q are between
-    1 and n, and p != q always.
-    
-    Inputs
-    ------
-    true_rates: a list containing the true transition rates at each time in
-        time_series. true_rates[i] are the true transition rates at i and
-        true_rates[i] is a NumPy ndarray of shape (1, n*(n-1)), where n*(n-1)
-        is the maximum number of transition rates in a continuous-time
-        Markov chain with n states.
-    n: number of states in the continuous-time Markov chain.
-    """
-    
-    num_rates = n * (n - 1)
-    
-    lams_gen_positions = [
-        lams_idx_to_gen_pos(i, n)
-        for i in range(num_rates)
-    ]
-    
-    true_rates_df = pd.DataFrame(
-        np.stack([true_rates_i.reshape(-1) for true_rates_i in true_rates]),
-        columns=[f"L_{p}_{q}" for p, q in lams_gen_positions]
-    )
-    
-    return true_rates_df
-
-
-def run_particle_filter(*,
-        ctmc_ssm,
-        data,
-        N,
-        k_series,
-        exp_X: bool = False,
-        qs = None
-    ):
-    
-    """
-    Runs the bootstrap particle filter and stores the results
-    into an xarray.Dataset.
-        
-    If quantiles is None, calculate and store the quantiles 5%, 50%, and
-    95% of the filtering ensembles in the Dataset.
-        
-    Inputs
-    ------
-    ctmc_ssm: continuous-time Markov chain state-space model as a Python
-        object.
-    data: a list of length K+1 containing the data/observations.
-    N: number of particles in the particle filter.
-    lam_names: ["L_1_2", "L_1_3", ..., f"L_{n_{n-1}"], where f"L_{p}_{q}"
-        refers to the transition rate from states p to q and n is the number
-        of states in the continuous-time Markov chain. Note that p != q.
-        See docstring in make_true_rates_dataframe for more details.
-    k_series: [0, 1, 2, ..., K-1, K], a list, NumPy 1D ndarray, etc.
-    exp_X: if True, exponentiate the particles' values. Done so with the
-        Gaussian process runs.
-    qs: NumPy ndarray of shape (Q,) containing Q quantiles to compute, each
-        between 0 and 1.
-    """
-    
-    if qs is None:
-        qs = np.array([0.05, 0.5, 0.95]) # 90% interval & median
-    
-    
-    ###### Run the bootstrap particle filter ######
-    
-    fk_boot = augssm.AugmentedBootstrap(ssm=ctmc_ssm, data=data)
-    pf_boot = particles.SMC(
-        fk=fk_boot, N=N,
-        resampling='stratified', 
-        store_history=True, collect=[Moments()]
-    )
-    print("Beginning the bootstrap particle filter.")
-    pf_boot.run()
-    print("Bootstrap particle filter finished.")
-    print()
-    
-    
-    ###### Store lambda particles and weights in an xarray.Dataset ######
-    
-    lams_gen_positions = [
-        lams_idx_to_gen_pos(i, ctmc_ssm.n)
-        for i in range(ctmc_ssm.num_lams)
-    ]
-    lam_names = [f"L_{p}_{q}" for p, q in lams_gen_positions]
-    
-    ds_boot = xr.Dataset({
-        
-        'X': xr.DataArray(
-            np.stack([pf_boot.hist.X[k] for k in k_series]),
-            dims=("k", "particle", "lam"),
-            coords={
-                "k": k_series,
-                "lam": lam_names,
-            },
-            name="Bootstrap PF Particles"
-        ),
-        
-        'W': xr.DataArray(
-            np.stack([pf_boot.hist.wgts[k].W for k in k_series]),
-            dims=("k", "weight"),
-            coords={
-                "k": k_series
-            },
-            name="Bootstrap PF Weights"
-        ),
-        
-        'ESS': xr.DataArray(
-            pf_boot.summaries.ESSs,
-            dims="k",
-            coords={
-                "k": k_series
-            },
-            name="Bootstrap PF ESSs"
-        )
-    })
-    
-    # If exp_X, exponentiate the log-rates
-    if exp_X:
-        ds_boot["X"] = np.exp(ds_boot["X"])
-    
-    
-    ###### Calculate quantiles and add into ds_boot ######
-    
-    ds_boot["X_quantiles"] = xr.apply_ufunc(
-        weighted_quantile,
-        ds_boot["X"],
-        ds_boot["W"],
-        input_core_dims=[["particle"], ["weight"]],
-        output_core_dims=[["quantile"]],
-        vectorize=True,
-        kwargs={"quantiles": qs},
-        dask="parallelized",
-        output_dtypes=[float],
-    ).assign_coords(quantile=qs).rename("Bootstrap PF Quantiles")
-    
-    return ds_boot
+###### GENERATE RESULTS OF A RUN ######
 
 
 def generate_run_results(*,
@@ -327,8 +118,8 @@ def generate_run_results(*,
     ):
     
     """
-    Generate the results of a run in a group for one of the examples.
-    Return the results as a dictionary.
+    Generate the results of a run for a case study. Returns the results
+    as a dictionary.
     
     Inputs
     ------
@@ -370,7 +161,7 @@ def generate_run_results(*,
     
     if case_study_num == 1:
         y_init = get_rw_all_state_p_initial_config(J=J)
-        true_rates = simulate_example_a(K=K) # For data simulation
+        true_rates = simulate_rates_cs1(K=K) # For data simulation
         
     elif case_study_num == 2:
         y_init = None
@@ -378,11 +169,11 @@ def generate_run_results(*,
         
     elif case_study_num == 3:
         y_init = None
-        true_rates = simulate_example_c(K=K) # For data simulation
+        true_rates = simulate_rates_cs3(K=K) # For data simulation
     
     elif case_study_num == 4:
         y_init = get_rw_all_state_p_initial_config(J=J)
-        true_rates = simulate_case_study_4(K=K) # For data simulation
+        true_rates = simulate_rates_cs4(K=K) # For data simulation
         
     else:
         raise NotImplementedError(
@@ -426,7 +217,7 @@ def generate_run_results(*,
     if case_study_num == 1 and J == 1 and K == 300:
         
         # Manual simulation of the data only occurs in example A
-        data = simulate_data_manually_example_a()
+        data = simulate_data_manually_cs1()
         
     else:
         
@@ -1281,7 +1072,7 @@ def state_proportions_standalone_plot(*,
     if example_folder_name is None:
         example_folder_name = f"CTMC_CaseStudy{case_study_num}_Figs"
     
-    PLOTS_FOLDER_DIR = PLOTS_ROOT_FOLDER_DIR / f"{example_folder_name}"
+    PLOTS_FOLDER_DIR = PLOTS_ROOT_DIR / f"{example_folder_name}"
     PLOTS_FOLDER_DIR.mkdir(exist_ok=True, parents=True)
     
     
@@ -1299,7 +1090,7 @@ def state_proportions_standalone_plot(*,
         if case_study_num == 1:
             n = 3
             y_init = get_rw_all_state_p_initial_config(J=J, p=1, n=n)
-            true_rates = simulate_example_a(K=K)
+            true_rates = simulate_rates_cs1(K=K)
             
         elif case_study_num == 2:
             n = 2
@@ -1309,12 +1100,12 @@ def state_proportions_standalone_plot(*,
         elif case_study_num == 3:
             n = 2
             y_init = get_default_rw_initial_config(n=n, J=J)
-            true_rates = simulate_example_c(K=K)
+            true_rates = simulate_rates_cs3(K=K)
             
         elif case_study_num == 4:
             n = 5
             y_init = get_rw_all_state_p_initial_config(J=J, p=1, n=n)
-            true_rates = simulate_case_study_4(K=K)
+            true_rates = simulate_rates_cs4(K=K)
         
         data = simulate_data(
             true_rates = true_rates,
@@ -1512,7 +1303,7 @@ def generate_true_rates_plot_example_b(*,
     """
     
     TRUE_LAMS_PLOT_DIR = (
-        PLOTS_ROOT_FOLDER_DIR /
+        PLOTS_ROOT_DIR /
         f"{example_folder_name}"
     )
     
@@ -1590,7 +1381,7 @@ def generate_true_rates_plot_example_c(*,
     latex_symbol = "$\\phi$"
     
     TRUE_LAMS_PLOT_DIR = (
-        PLOTS_ROOT_FOLDER_DIR /
+        PLOTS_ROOT_DIR /
         f"{example_folder_name}"
     )
     TRUE_LAMS_PLOT_DIR.mkdir(exist_ok=True)
@@ -1663,7 +1454,7 @@ def generate_true_rates_plot_case_study_4(*,
     true_lams_df = true_lams_df[["L_1_2", "L_2_3", "L_3_4", "L_4_5", "L_5_1"]]
     
     TRUE_LAMS_PLOT_DIR = (
-        PLOTS_ROOT_FOLDER_DIR /
+        PLOTS_ROOT_DIR /
         f"{example_folder_name}"
     )
     TRUE_LAMS_PLOT_DIR.mkdir(exist_ok=True)
@@ -1730,7 +1521,7 @@ def generate_true_rates_plot_case_study_4(*,
         plt.show()
 
 
-###### CASE STUDY 1 RUN RESULTS GENERATION ######
+###### GENERATE GROUP PLOTS FOR CASE STUDY ######
 
 
 def generate_group_plots_for_case_study(*,
@@ -1771,7 +1562,7 @@ def generate_group_plots_for_case_study(*,
         example_folder_name = f"CTMC_CaseStudy{case_study_num}_Figs"
     
     PLOTS_FOLDER_DIR = (
-        PLOTS_ROOT_FOLDER_DIR / 
+        PLOTS_ROOT_DIR / 
         f"{example_folder_name}/Group_{group_num}"
     )
     PLOTS_FOLDER_DIR.mkdir(exist_ok=True, parents=True)
@@ -1885,7 +1676,7 @@ def generate_group_plots_for_case_study(*,
     
     if case_study_num == 1:
         true_rates_df_plot = make_true_rates_dataframe(
-            true_rates = simulate_example_a(K=K_plot),
+            true_rates = simulate_rates_cs1(K=K_plot),
             n = n
         )
     
@@ -1897,13 +1688,13 @@ def generate_group_plots_for_case_study(*,
         
     elif case_study_num == 3:
         true_rates_df_plot = make_true_rates_dataframe(
-            true_rates = simulate_example_c(K=K_plot),
+            true_rates = simulate_rates_cs3(K=K_plot),
             n = n
         )
         
     elif case_study_num == 4:
         true_rates_df_plot = make_true_rates_dataframe(
-            true_rates = simulate_case_study_4(K=K_plot),
+            true_rates = simulate_rates_cs4(K=K_plot),
             n = n
         )
         
@@ -2075,160 +1866,6 @@ def generate_group_plots_for_case_study(*,
 
 
 
-
-
 if __name__ == "__main__":
     pass
-
-
-
-
-
-
-###### Old plotting code ######
-
-
-
-## Plot data (if J not too large) ##
-
-# if J <= 10:
-#     data_plot = np.vstack(data)
-    
-#     fig, axes = plt.subplots(
-#         nrows=J,
-#         ncols=1,
-#         sharex=True,
-#         figsize=(8, 3)
-#     )
-#     fig.suptitle("RW states over time", fontsize=14)
-    
-#     # Ensure axes is always iterable (important if J == 1)
-#     if J == 1:
-#         axes = [axes]
-    
-#     for j in range(J):
-#         axes[j].plot(k_series, data_plot[:, j])
-#         axes[j].set_ylabel(f"RW #{j+1}")
-#         axes[j].grid(True)
-    
-#     axes[-1].set_xlabel("k")
-#     plt.tight_layout()
-#     if SAVE_PLOTS:
-#         op_num = get_option_num_for_transition_dist(px_var_flag)
-#         folder_path = Path(PLOT_ROOT_FOLDER_NAME + "/"
-#                            + f"{EXAMPLE_FOLDER_NAME}/Option {op_num}; J={J}")
-#         folder_path.mkdir(parents=True, exist_ok=True)
-#         image_name = f"RW_States_J{J}_Op{op_num}.png"
-#         plt.savefig(folder_path / image_name,
-#                     bbox_inches='tight')
-#         plt.close("all")
-#     else:
-#         plt.show()
-# else:
-#     print(f"Too many random walkers to plot: {J} RWs.")
-
-
-
-## Band plots: 5th quantile, median, 95th quantile ##
-
-# for lam_idx, lam in enumerate(true_lams.columns):
-#     p, q = lams_idx_to_gen_pos(lam_idx, n)
-#     latex_symbol, rate_name_img = get_latex_rate_symbol(p, q)
-    
-#     median = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.5)
-#     lq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.05)
-#     uq = ds_boot["X_quantiles"].sel(lam=lam, quantile=0.95)
-#     plt.plot(k_series, true_lams[lam].values, label=f"True {latex_symbol}",
-#              color='red', alpha=0.7)
-#     plt.plot(median, color="green",
-#              label="PF mean", alpha=0.7)
-#     plt.fill_between(k_series, 
-#                      y1=lq, 
-#                      y2=uq, 
-#                      color="green", alpha=0.3)
-#     plt.legend()
-#     plt.xlabel("k")
-#     plt.ylabel(f"Value of {latex_symbol}")
-#     plt.title(f"Boot PF band plot (quantiles): {latex_symbol} | "
-#               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
-#     if SAVE_PLOTS:
-#         folder_path = Path(FOLDER_PATH_STR)
-#         folder_path.mkdir(parents=True, exist_ok=True)
-#         image_name = f"Quantiles_{rate_name_img}_J{J}_Op{op_num}.png"
-#         plt.savefig(folder_path / image_name,
-#                     bbox_inches='tight')
-#         plt.close("all")
-#     else:
-#         plt.show()
-
-
-
-## KDE AND PAIRWISE SCATTER PLOTS ##
-
-# if PLOT_EXTRAS:
-    
-#     ## Choose some k between 0 and K+1 (inclusive) ##
-    
-#     k = np.random.randint(K+1)
-    
-    
-#     ## KDE for each lam (uses weights of particles) ##
-    
-#     for lam in true_lams.columns:
-#         fig, ax = plt.subplots(figsize=(TEXTWIDTH_IN, 6))
-#         sns.kdeplot(x=(ds_boot["X"].sel({'lam': lam, 'k': k})
-#                        .values.reshape(-1)),
-#                     weights=ds_boot["W"].sel({'k': k}).values.reshape(-1),
-#                     ax=ax, fill=True,
-#                     color="skyblue", label="Boot")
-#         ax.axvline(x=true_lams.loc[k][lam], color='red', linestyle=':',
-#                    linewidth=1.5, label='True state')
-#         ax.set_xlabel("Value")
-#         ax.set_ylabel("Density")
-#         ax.set_title(f"Boot Filtering Dist. @ k = {k}: {lam}")
-#         ax.legend()
-#         plt.grid(True, linestyle='--', alpha=0.7)
-#         plt.show()
-    
-    
-#     ## Pairwise scatter plots of particles (not using weights) ##
-    
-#     plot_df = (
-#         ds_boot["X"].sel(k=k)
-#         .to_pandas() # index: particle, columns: lambda
-#         .reset_index(drop=True)
-#     )
-    
-#     sns.pairplot(
-#         plot_df,
-#         plot_kws={"alpha": 0.5, "s": 15}
-#     )
-#     plt.suptitle(f"Pairwise scatter at k = {k}: Boot PF", y=1.02)
-#     plt.show()
-
-
-
-## Band plots: bad way ##
-
-# means_boot =  np.stack([m['mean'] for m in pf_boot.summaries.moments])
-# vars_boot = np.stack([m['var'] for m in pf_boot.summaries.moments])
-
-# for lam_idx, lam in enumerate(true_lams.columns):
-#     plt.plot(k_series, true_lams[lam].values, label=f"True {lam}",
-#              color='red', alpha=0.7)
-#     plt.plot(means_boot[..., lam_idx], color="green",
-#              label="PF mean", alpha=0.7)
-#     plt.fill_between(k_series, 
-#                      y1=(means_boot[..., lam_idx]
-#                          -2*np.sqrt(vars_boot[..., lam_idx])), 
-#                      y2=(means_boot[..., lam_idx]
-#                          +2*np.sqrt(vars_boot[..., lam_idx])), 
-#                      color="green", alpha=0.3)
-#     plt.legend()
-#     plt.xlabel("k")
-#     plt.ylabel(f"Value of {lam}")
-#     p, q = lams_idx_to_gen_pos(lam_idx, n)
-#     plt.title(f"Boot PF band plot (bad way): $\\lambda^{{{p} \\to {q}}}$ | "
-#               + f"J={J}; N={N}; $\Delta t$={delta_t}; C={C}")
-#     plt.show()
 

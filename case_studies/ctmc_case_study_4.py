@@ -18,7 +18,7 @@ generate_true_rates_plot = True
 
 ###### IMPORTS ######
 
-from testing.run_results_generation import (
+from case_studies.case_study_results_generation import (
     generate_group_plots_for_case_study,
     state_proportions_standalone_plot
 )

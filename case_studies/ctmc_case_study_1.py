@@ -17,7 +17,7 @@ t_K = 3 # What t_K should be
 
 ###### IMPORTS ######
 
-from testing.run_results_generation import (
+from case_studies.case_study_results_generation import (
     generate_group_plots_for_case_study
 )
 
@@ -105,6 +105,7 @@ for i in range(0, len(run_groups)): # Group 1, 2, 3, etc
     )
     
     start_idx += num_runs
+
 
 # %%
 

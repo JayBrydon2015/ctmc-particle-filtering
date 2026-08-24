@@ -5,17 +5,23 @@
 
 #### IMPORTS ####
 
-from pathlib import Path
 import numpy as np
-from ctmc_modules.ctmc_ssms import (
-    CTMC,
-    GP_CTMC,
-    lams_idx_to_gen_pos
-)
-from testing.run_results_generation import (
+
+from ctmc_modules.plotting_config import (
+    PLOTS_ROOT_DIR,
     TEXTWIDTH_IN,
     FONT_SIZE,
-    TICK_FONT_SIZE,
+    TICK_FONT_SIZE
+)
+
+from ctmc_modules.functions import lams_idx_to_gen_pos
+
+from ctmc_modules.ctmc_ssms import (
+    CTMC,
+    GP_CTMC
+)
+
+from case_studies.case_study_results_generation import (
     get_latex_rate_symbol,
     apply_font_sizes
 )
@@ -25,11 +31,8 @@ from testing.run_results_generation import (
 
 SAVE_PLOTS = True
 
-PLOTS_ROOT_FOLDER_DIR = Path(__file__).parent / "generated_plots"
-PLOTS_ROOT_FOLDER_DIR.mkdir(exist_ok=True)
-
-PLOTS_FOLDER_DIR = PLOTS_ROOT_FOLDER_DIR / "True_rate_simulations"
-PLOTS_FOLDER_DIR.mkdir(exist_ok=True)
+PLOTS_DIR = PLOTS_ROOT_DIR / "True_rate_simulations"
+PLOTS_DIR.mkdir(exist_ok=True)
 
 
 #### MATPLOTLIB IMPORTS ####
@@ -58,9 +61,6 @@ mu0  = np.array([10,   10  ])
 var0 = np.array([0.25, 0.25])
 
 num_simulations = 5
-
-
-#### FUNCTIONS ####
 
 
 # %%
@@ -143,7 +143,7 @@ apply_font_sizes(fig, FONT_SIZE, TICK_FONT_SIZE)
 
 if SAVE_PLOTS:
     fig.savefig(
-        PLOTS_FOLDER_DIR / "true_rate_simulations.pdf",
+        PLOTS_DIR / "true_rate_simulations.pdf",
         format="pdf",
         bbox_inches="tight",
     )
@@ -184,7 +184,7 @@ for i in range(num_params):
         delta_t=delta_t,
         kappa=kappa,
         sigma2=sigma2,
-        mu0=mu0
+        mu=mu0
     )
 
     for j in range(num_simulations):
@@ -227,7 +227,7 @@ apply_font_sizes(fig, FONT_SIZE, TICK_FONT_SIZE)
 
 if SAVE_PLOTS:
     fig.savefig(
-        PLOTS_FOLDER_DIR / "true_rate_gp_simulations.pdf",
+        PLOTS_DIR / "true_rate_gp_simulations.pdf",
         format="pdf",
         bbox_inches="tight",
     )

@@ -2,10 +2,10 @@
 
 """
 
-Bootstrap PF for inferring rates of the CTMC in Case Study #2.
+Bootstrap PF for inferring rates of the CTMC in Case Study #3.
 
-In this case study, the transition rates under sinusoidal evolution over
-time.
+In this case study, the transition rates are piecewise-constant and undergo
+and abrupt change.
 
 """
 
@@ -19,7 +19,7 @@ generate_true_rates_plot = True
 
 ###### IMPORTS ######
 
-from testing.run_results_generation import (
+from case_studies.case_study_results_generation import (
     generate_group_plots_for_case_study,
     state_proportions_standalone_plot
 )
@@ -29,35 +29,15 @@ from testing.run_results_generation import (
 
 #### CTMC SSM & Other Parameters ####
 
-total_num_runs_nongp = 11
+total_num_runs_nongp = 4
 run_groups = [
     {
      "N":   [N_L,   N_L,   N_L,   N_L  ],
-     "dt":  [0.3,   0.1,   0.03,  0.003],
-     "K":   [10,    30,    100,   1000 ],
+     "dt":  [0.3,   0.03,  0.003, 0.03 ],
+     "K":   [10,    100,   1000,  100  ],
      "J":   [1000,  1000,  1000,  1000 ],
-     "C":   [2,     2,     2,     2    ],
+     "C":   [20,    20,    20,    100  ],
      "TV":  ["CV",  "CV",  "CV",  "CV" ],
-     "pbc": [False, False, False, False],
-    },
-    
-    {
-     "N":   [N_L,   N_L,   N_L  ],
-     "dt":  [0.03,  0.03,  0.03 ],
-     "K":   [100,   100,   100  ],
-     "J":   [10,    100,   10000],
-     "C":   [2,     2,     2    ],
-     "TV":  ["CV",  "CV",  "CV" ],
-     "pbc": [False, False, False],
-    },
-    
-    {
-     "N":   [N_L,   N_L,   N_L,   N_L  ],
-     "dt":  [0.03,  0.03,  0.03,  0.03 ],
-     "K":   [100,   100,   100,   100  ],
-     "J":   [1000,  1000,  1000,  1000 ],
-     "C":   [0.2,   10,    1,     5    ],
-     "TV":  ["CV",  "CV",  "PV",  "PV" ],
      "pbc": [False, False, False, False],
     },
 ]
@@ -74,10 +54,9 @@ assert all(
 
 # Band plot ylim and ymax values, and y axis ticks
 bp_ymin = [0, 0]
-bp_ymax = [6, 6]
+bp_ymax = [24, 24]
 y_ticks = [
-    [0, 2, 4, 6],
-    [0, 2, 4, 6],
+    [0, 5, 10, 15, 20],
 ]
 
 
@@ -91,7 +70,7 @@ for i in range(len(run_groups)): # Group 1, 2, 3, etc
     num_runs = len(runs_table_dictionary["N"])
     
     generate_group_plots_for_case_study(
-        case_study_num = 2,
+        case_study_num = 3,
         group_num = i + 1,
         start_index = start_idx,
         runs_table_dictionary = runs_table_dictionary,
@@ -114,7 +93,7 @@ for i in range(len(run_groups)): # Group 1, 2, 3, etc
 #### Create standalone state proportions plot for 10,000 RWs ####
 
 state_proportions_standalone_plot(
-    case_study_num = 2,
+    case_study_num = 3,
     n = 2,
     delta_t = 0.01,
     K = 300,
@@ -129,16 +108,16 @@ state_proportions_standalone_plot(
 #### GP CTMC SSM & Other Parameters ####
 
 # By convention, GP runs come after non-GP runs
-total_num_runs_gp = 3
+total_num_runs_gp = 2
 run_groups_gp = [
     {
-     "N":      [N_L,   N_L,   N_L  ],
-     "dt":     [0.03,  0.03,  0.03 ],
-     "K":      [100,   100,   100  ],
-     "J":      [1000,  1000,  1000 ],
-     "kappa":  [0.98,  0.98,  0.98 ],
-     "sigma2": [0.64,  0.01,  4    ],
-     "pbc":    [False, False, False],
+     "N":      [N_L,   N_L  ],
+     "dt":     [0.03,  0.03 ],
+     "K":      [100,   100  ],
+     "J":      [1000,  1000 ],
+     "kappa":  [0.98,  0.98 ],
+     "sigma2": [0.64,  16   ],
+     "pbc":    [False, False],
     },
 ]
 assert total_num_runs_gp == sum(
@@ -154,12 +133,10 @@ assert all(
 
 # Band plot ylim and ymax values, and y axis ticks
 bp_ymin = [0, 0]
-bp_ymax = [6, 6]
+bp_ymax = [24, 24]
 y_ticks = [
-    [0, 2, 4, 6],
-    [0, 2, 4, 6],
+    [0, 5, 10, 15, 20],
 ]
-
 
 #### GENERATE RESULTS FOR EACH GROUP/RUN: GP RUNS ####
 
@@ -171,7 +148,7 @@ for i in range(len(run_groups_gp)):
     num_runs = len(runs_table_dictionary["N"])
     
     generate_group_plots_for_case_study(
-        case_study_num = 2,
+        case_study_num = 3,
         group_num = len(run_groups) + i + 1,
         start_index = start_idx,
         runs_table_dictionary = runs_table_dictionary,

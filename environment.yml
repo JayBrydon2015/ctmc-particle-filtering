@@ -4,18 +4,16 @@ channels:
   - defaults
 
 dependencies:
-  - python=3.13
-  - seaborn
-  - xarray
-  - scipy
-  - pandas
-  - matplotlib
+  - python
   - numpy
+  - xarray
+  - pandas
+  - scipy
   - scikit-learn
-  - joblib
-  - numba
   - statsmodels
-  - pip
+  - matplotlib
+  - seaborn
+  - spyder
 
   - pip:
       - git+https://github.com/JayBrydon2015/particles.git
